@@ -19,47 +19,97 @@ The solution adopted finally is to use the brep off them and try to work with it
 #retreat the line (side that aligns with this side) 
 #make sure tht the connection line is greate than a threshold?
 
-print("a")
-#1. Create Brep from the surface (main)
-def trim_intersecting_panel_pair(brep1, brep2, total_extrusion, add_tolerance, flip_box):
-    #Create Brep of the main surface and for simplicity explode from both sides
-    brep_raw = deepcopy(brep1)
+#so we import the extruded panels (4.5 one side + 0.5 second side cm)(input)
+#we have one of the 3 options:
+#1. split the panel or boolean difference
+#2. get the untrimmed surface and offset then trim the panel
+#3. scale to a certain limit the cutting panel to cover the required distance
 
-    #rg.Surface.Offset
-    #Solution no. 1:
-    #Step 1: Create a dummy box for cutting
-    if flip_box:
-        brep_raw.Flip()
-    brep_trim_boxes,_,_ = rg.Brep.CreateOffsetBrep(brep_raw,total_extrusion + add_tolerance, True, True, 0.01)
+def trim_intersecting_panel_pair(cutting_brep, brep_needed, option_type, trim_type = 2):
+    #1. split the panel or boolean difference
+    if option_type == 1:
+        pass
 
-    #Step 2: Cut the layer in the box
-    breps = rg.Brep.Split(brep_trim_boxes[0], brep2, 0.01)
-    print (breps)
-   
-   
-   
-    #Solution no.2: (offset 2 surfaces and join them)
-    #surface_dummy_flipped = surface_dummy.Reverse(0)
-    #surface_dummy_flipped.Reverse(1, True)
+    if option_type == 2: #transforming the big surface into untrimmed surface
+        brep_faces = cutting_brep.Faces
+        surfaces = []
+        for index in range(brep_faces.Count):
+            surfaces.append(brep_faces[index].UnderlyingSurface())
+        surfaces.sort(key=lambda surface: surface.GetSurfaceSize()[1] * surface.GetSurfaceSize()[2], reverse=True)
+        #Analyising surface 1 and 2:
+        srf1 = surfaces[0]
+        srf2 = surfaces[1]
+
+        brep1 = srf1.ToBrep()
+        brep1_edges = brep1.Edges
+        edges_1 = []
+        for index in range(brep1_edges.Count):
+            edges_1.append(brep1_edges[index].EdgeCurve)
+        b1_curve = rg.Curve.JoinCurves(edges_1)[0]
+        print(b1_curve)
+
+        brep2 = srf2.ToBrep()
+        brep2_edges = brep2.Edges
+        edges_2 = []
+        for index in range(brep2_edges.Count):
+            edges_2.append(brep2_edges[index].EdgeCurve)
+        b2_curve = rg.Curve.JoinCurves(edges_2)[0]
+
+        #create the loft from the extracted curves:
+        uncapped_cutting_brep = rg.Brep.CreateFromLoft([b1_curve, b2_curve],rg.Point3d.Unset, rg.Point3d.Unset, rg.LoftType.Normal, False)[0]
+        cutting_brep = rg.Brep.CapPlanarHoles(uncapped_cutting_brep, 0.001)
+
+    if trim_type == 1:
+            breps = brep_needed.Split(cutting_brep, 0.01) 
+            
+    elif trim_type == 2:
+            breps = rg.Brep.CreateBooleanDifference(brep_needed,cutting_brep, 0.01)
     
-    #offset_surf_a = rg.Surface.Offset(surface_dummy,total_extrusion + add_tolerance, 0.01)
-    #offset_surf_b = rg.Surface.Offset(surface_dummy_flipped,total_extrusion + add_tolerance, 0.01)
+    #get the brep with the maximum volume: (just an intuition)
+    if len(breps) > 0:
+        if len(breps) > 1:
+            breps.sort(key=lambda brep: brep.GetVolume(), reverse=True)
+        brep_needed = breps[0]  
+    else:
+        print("there is a problem in the panel") 
+        
+    return brep_needed, cutting_brep
 
-    return brep_trim_boxes[0], breps
+
+######################################################################################################################################
+#get the index of the brep:
+#for brep in panels_list:
+ #    if 
+
+brep_needed, cuttingbrep = trim_intersecting_panel_pair(cutter_brep, brep_needed,option_type,  trim_type)
 
 
 
-brep, breps =  trim_intersecting_panel_pair(brep1, brep2, 20,1, False)
-breps = th.list_to_tree(breps)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #surfaces = th.list_to_tree(surfaces)
 #curves = rg.Curve.JoinCurves([curve1, curve2], 0.01)
 
-
-
-
-
+#!!!try add different options such as brep difference, brep intersection, brep split !!
+#if option_selector == 1:
+#    lista[0] = 1
+#if option_selector == 2:
+#    lista[1] = 1222
 #Try the intersection between breps and curves
-print(curves)
+#print(curves)
 
 #rg.Surface.Split()
 #rg.Surface.Trim()
@@ -75,6 +125,9 @@ print(curves)
     # mid_v = interval_v.Mid
     # _, point, vectors =  rg.Surface.Evaluate(surface_dummy, mid_u,mid_v, 1)
 
-    # normal_vect_surf = rg.Vector3d.CrossProduct(vectors[0],vectors[1])
-
-    
+#New function: 
+# takes in a list of all possible panels with their 
+"""
+Notes:
+1. Trying bounding box of the cutting brep doesnt work as it yields a big unrealistic box 
+"""
