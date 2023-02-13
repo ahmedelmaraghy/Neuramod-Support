@@ -46,7 +46,7 @@ def trim_intersecting_panel_pair(cutting_brep, brep_needed, option_type, trim_ty
         for index in range(brep1_edges.Count):
             edges_1.append(brep1_edges[index].EdgeCurve)
         b1_curve = rg.Curve.JoinCurves(edges_1)[0]
-        #print(b1_curve)
+        print(b1_curve)
 
         brep2 = srf2.ToBrep()
         brep2_edges = brep2.Edges
@@ -84,7 +84,7 @@ def trim_intersecting_panel_pair(cutting_brep, brep_needed, option_type, trim_ty
     brep1 = breps_from_faces[1]
     brep2 = breps_from_faces[0]
   
-    print (breps_from_faces)
+    print (brep1)
     
     srf1 =  brep1.Surfaces[0]
     srf1.SetDomain(0, rg.Interval(0,1))
@@ -97,16 +97,15 @@ def trim_intersecting_panel_pair(cutting_brep, brep_needed, option_type, trim_ty
     new_brep2 = deepcopy(brep1)
     new_brep2.Translate(vector_centers)
 
-    brep2 =  rg.BrepFace.CreateExtrusion(brep1.Faces[0], curve, True)
+    brep_needed_tampered =  rg.BrepFace.CreateExtrusion(brep1.Faces[0], curve, True)
  
 
-    return uncapped_cutting_brep, cutting_brep, brep1, brep2
-
+    return cutting_brep, brep_needed_tampered
 
 ######################################################################################################################################
 
 
-brep_needed, cuttingbrep, srf1, srf2 = trim_intersecting_panel_pair(cutter_brep, brep_needed,option_type,  trim_type)
+cuttingbrep, brep_needed_tampered = trim_intersecting_panel_pair(cutter_brep, brep_needed,option_type,  trim_type)
 
 
 
