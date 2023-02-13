@@ -46,7 +46,7 @@ def trim_intersecting_panel_pair(cutting_brep, brep_needed, option_type, trim_ty
         for index in range(brep1_edges.Count):
             edges_1.append(brep1_edges[index].EdgeCurve)
         b1_curve = rg.Curve.JoinCurves(edges_1)[0]
-        print(b1_curve)
+        #print(b1_curve)
 
         brep2 = srf2.ToBrep()
         brep2_edges = brep2.Edges
@@ -58,6 +58,7 @@ def trim_intersecting_panel_pair(cutting_brep, brep_needed, option_type, trim_ty
         #create the loft from the extracted curves:
         uncapped_cutting_brep = rg.Brep.CreateFromLoft([b1_curve, b2_curve],rg.Point3d.Unset, rg.Point3d.Unset, rg.LoftType.Normal, False)[0]
         cutting_brep = rg.Brep.CapPlanarHoles(uncapped_cutting_brep, 0.001)
+
 
     if trim_type == 1:
             breps = brep_needed.Split(cutting_brep, 0.01) 
@@ -72,16 +73,40 @@ def trim_intersecting_panel_pair(cutting_brep, brep_needed, option_type, trim_ty
         brep_needed = breps[0]  
     else:
         print("there is a problem in the panel") 
-        
-    return brep_needed, cutting_brep
+
+    #modify the brep needed to obtain the right geometry
+    #1. get the faces:
+    brep_faces = brep_needed.Faces
+    breps_from_faces = []
+    for index in range(brep_faces.Count):
+        breps_from_faces.append(brep_faces.ExtractFace(index))  
+    breps_from_faces.sort(key=lambda brep: brep.GetArea(), reverse=True)
+    brep1 = breps_from_faces[1]
+    brep2 = breps_from_faces[0]
+  
+    print (breps_from_faces)
+    
+    srf1 =  brep1.Surfaces[0]
+    srf1.SetDomain(0, rg.Interval(0,1))
+    srf1.SetDomain(1, rg.Interval(0,1))
+
+    pt1 = srf1.Evaluate(0.5,0.5,1)[1]
+    pt2 = rg.Brep.ClosestPoint(brep2, pt1)
+    vector_centers = pt2 - pt1
+    curve = rg.LineCurve(pt1, pt2)
+    new_brep2 = deepcopy(brep1)
+    new_brep2.Translate(vector_centers)
+
+    brep2 =  rg.BrepFace.CreateExtrusion(brep1.Faces[0], curve, True)
+ 
+
+    return uncapped_cutting_brep, cutting_brep, brep1, brep2
 
 
 ######################################################################################################################################
-#get the index of the brep:
-#for brep in panels_list:
- #    if 
 
-brep_needed, cuttingbrep = trim_intersecting_panel_pair(cutter_brep, brep_needed,option_type,  trim_type)
+
+brep_needed, cuttingbrep, srf1, srf2 = trim_intersecting_panel_pair(cutter_brep, brep_needed,option_type,  trim_type)
 
 
 
