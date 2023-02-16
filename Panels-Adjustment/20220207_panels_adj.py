@@ -46,7 +46,7 @@ def trim_intersecting_panel_pair(cutting_brep, brep_needed, option_type, trim_ty
         for index in range(brep1_edges.Count):
             edges_1.append(brep1_edges[index].EdgeCurve)
         b1_curve = rg.Curve.JoinCurves(edges_1)[0]
-        print(b1_curve)
+        #print(b1_curve)
 
         brep2 = srf2.ToBrep()
         brep2_edges = brep2.Edges
@@ -66,10 +66,25 @@ def trim_intersecting_panel_pair(cutting_brep, brep_needed, option_type, trim_ty
     elif trim_type == 2:
             breps = rg.Brep.CreateBooleanDifference(brep_needed,cutting_brep, 0.01)
     
+
+    #if brep is open brep:
+
+    #transform breps from array into list as it caused bugs previously
+    print(breps)
+    breps_list = []
+   
     #get the brep with the maximum volume: (just an intuition)
     if len(breps) > 0:
         if len(breps) > 1:
-            breps.sort(key=lambda brep: brep.GetVolume(), reverse=True)
+            for brep in breps:
+                brep = (brep.CapPlanarHoles(0.001)) #is not wokring !!!
+                breps_list.append(brep)               
+                #print(brep.GetArea())
+            #P.S: reason for sorting by this long way is that sometimes trimming or booldiff produces a
+            # certain shape that is open brep and if we get its volume it becomes so inaccurate and renders weird shapes !!
+            breps_list.sort(key=lambda brep: rg.Point3d.DistanceTo(brep.GetBoundingBox(True).Center,
+                                                                   brep_needed.GetBoundingBox(True).Center )  , reverse=False)    
+       
         brep_needed = breps[0]  
     else:
         print("there is a problem in the panel") 
@@ -81,7 +96,7 @@ def trim_intersecting_panel_pair(cutting_brep, brep_needed, option_type, trim_ty
     for index in range(brep_faces.Count):
         breps_from_faces.append(brep_faces.ExtractFace(index))  
     breps_from_faces.sort(key=lambda brep: brep.GetArea(), reverse=True)
-    brep1 = breps_from_faces[1]
+    brep1 = breps_from_faces[1] 
     brep2 = breps_from_faces[0]
   
     print (brep1)
@@ -100,12 +115,49 @@ def trim_intersecting_panel_pair(cutting_brep, brep_needed, option_type, trim_ty
     brep_needed_tampered =  rg.BrepFace.CreateExtrusion(brep1.Faces[0], curve, True)
  
 
-    return cutting_brep, brep_needed_tampered
+    return brep_needed_tampered, cutting_brep,  breps
+
+
+def change_input_into_panels_numbers(input_line):
+    output_list = []
+    for val in input_line:
+        try:
+            output_list.append(int(val))
+        except ValueError:
+            # Handle non-numeric values here
+            print("Value '{val}' cannot be converted to an integer.")
+
+    return output_list
+     
 
 ######################################################################################################################################
 
 
-cuttingbrep, brep_needed_tampered = trim_intersecting_panel_pair(cutter_brep, brep_needed,option_type,  trim_type)
+#brep_needed_tampered, cuttingbrep, breps = trim_intersecting_panel_pair(cutter_brep, brep_needed,option_type,  trim_type)
+
+#check all panels and see if the cutter list has a number and try trim the current 
+#panel with the series of cutters then return the panel back in the list.
+output_panels = []
+for index, panel in enumerate(panels_list):
+    brep_needed = panel
+    print(brep_needed)
+    cutting_list_num = change_input_into_panels_numbers(cutting_breps[index])
+    if cutting_list_num[0] != 0:
+        print(cutting_list_num)
+        for num in cutting_list_num:
+            try:
+               cutter_brep = panels_list[num]
+
+               brep_needed_tampered,_,_ =  trim_intersecting_panel_pair(cutter_brep, brep_needed, option_type,trim_type)
+               brep_needed = brep_needed_tampered
+            except:
+                pass
+                #print("Problem occured in cutting the panel no. {0} using cutter panel no {1}".format(index, num))
+
+    panels_list[index] = brep_needed
+    #output_panels.append(brep_needed)    
+
+             
 
 
 
@@ -114,9 +166,7 @@ cuttingbrep, brep_needed_tampered = trim_intersecting_panel_pair(cutter_brep, br
 
 
 
-
-
-
+#Brep.CreateContourCurves
 
 
 
