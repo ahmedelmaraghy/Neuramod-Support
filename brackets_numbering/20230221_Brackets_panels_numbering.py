@@ -31,6 +31,9 @@ def remove_duplicate_lines_from_polycurve(polycurve, tolerance):
             curve.Domain = rg.Interval(0,1)
             lines.append(curve)
 
+
+
+
     duplicate_lines = []
     unique_lines = []
     
@@ -144,7 +147,7 @@ def select_small_edge_and_adjust_both_edges(edge_curves, big_edge, edge_extentio
 
     return small_edge.ToNurbsCurve(), big_edge.ToNurbsCurve(), p0, p1, pp0, pp1, long_gov_edge
     
-def add_planes_for_text(p0, p1, pp0, pp1, move_text_distance):
+def add_planes_for_text(p0, p1, pp0, pp1, move_text_distance1, move_text_distance2):
     """takes the points of the small and big line, creates planes for text insertion
     and moves it above of the brackets by a variable distance as preferred
     """
@@ -156,15 +159,38 @@ def add_planes_for_text(p0, p1, pp0, pp1, move_text_distance):
     small_X = rg.Vector3d.CrossProduct(small_Y, big_Y)
     big_X = rg.Vector3d.CrossProduct(big_Y, small_Y)
 
-    small_origin = p1 + small_Y * move_text_distance
-    big_origin = pp1 + big_Y * move_text_distance
+    small_origin = p1 + small_Y * move_text_distance1
+    big_origin = pp1 + big_Y * move_text_distance2
     #create planes for both tags
     small_plane = rg.Plane(small_origin, small_X, small_Y)
     big_plane = rg.Plane(big_origin, big_X, big_Y)
     
-    return [small_plane, big_plane], small_plane.Origin, big_plane.Origin
+    return (small_plane, big_plane), small_plane.Origin, big_plane.Origin
 
+class Panel_Extrusions(object):
+    def __init__(self,intersections):
+        self.intersections = intersections
+        self.panels = []
+        self.panels_ids = []
 
+    def populate_brackets_extrusion(self):
+        """iterates over all panels and checks if they are in the list or not, if yes, 
+        then perform 
+        """
+        for inter in intersections:
+        #iterate over all intersections checking if this layer id is in the panels list
+        #if yes then remove the brackets and replace the item in the panel with the id index
+        #if not then add it first then do the intersection extrusion thing
+            for index, panel_id in enumerate(inter.layer.Split('-')):
+                if panel_id not in self.panels_ids:
+                    self.panels_ids.append(panel_id)
+                    self.panels.append(inter.breps[index])
+                                 
+                new_brep = inter.remove_brackets_from_panel(self.panels[self.panels_ids.index(panel_id)])
+                #replace the new trimmed panel in place of the one before operation
+                self.panels[self.panels_ids.index(panel_id)] = new_brep
+
+    
 
 
 class Intersection(object):
@@ -175,15 +201,27 @@ class Intersection(object):
         breps: actual breps list 
         layers: actual layers list         
     """
-    def __init__(self,crvs,layer,breps,layers):
+    def __init__(self,crvs,layer,breps):
         self.crvs = crvs
         self.layer = layer
-        self.layers = layers
         self.breps = breps
         self.text_planes = []
-        self.tag = ""
+        self.tags = []
+        self.brackets = []
         self.label1 = TextEntity()
         self.label2 = TextEntity()
+
+    def remove_brackets_from_panel(self, brep):
+        """
+        produces the final panel where the brackets are split from the panel, producing the final trimmed panel only from one side of brackets
+        """
+        original_brep = brep
+        for bracket in self.brackets:
+            original_brep = rg.Brep.CreateBooleanDifference(original_brep, bracket, 0.001)[0]
+
+        return original_brep
+
+            
 
 def bake_object(obj,lay,col = 25):
     if obj is not None:
@@ -241,12 +279,14 @@ for brep0,id0 in zip(breps,ids):
                         pass
                         #print ('small')
                 list_intersections = remove_duplicate_lines(list_intersections, dup_lines_tol)
-                interX = Intersection(list_intersections,"%s-%s"%(layer0,layer1),[brep0,brep1],[layer0,layer1])
+                interX = Intersection(list_intersections,"%s-%s"%(layer0,layer1),[brep0,brep1])
                 intersections.append(interX)
 circles = []
 sm_edges = []
 big_edges = []
 p0s = []
+p1s = []
+planes_ = []
 edges_3 = []
 #add a numbering for each bracket
 #add a function that adds the plane and origin to which the number should be written 
@@ -305,7 +345,7 @@ for inter in intersections:
                         #circles.append(cut)
                         edge_curves = [edge.EdgeCurve for edge in cut.Edges if edge.Degree == 1]
                         edge_curves.sort(key = lambda e :e.GetLength())
-                        circles.append(edge_curves)
+                        #circles.append(edge_curves)
                         edge_count = 0
                         big_edge = edge_curves[-1]
                         for e in edge_curves:
@@ -318,13 +358,16 @@ for inter in intersections:
                         
 
                         #add a plane for adding later on the appropriate tags
-                        inter.text_planes, px, py = add_planes_for_text(p0, p1, pp0, pp1, move_text_distance) #both planes are appended
-                        p0s.append(py)
+                        planes_tuple, px, py = add_planes_for_text(p0, p1, pp0, pp1, move_text_distance1, move_text_distance2) #both planes are appended
+                        inter.text_planes.append(planes_tuple)
+                        #print(planes_tuple)
+                        
+                        #planes_.append(planes_tuple)
                         #debugging
                         sm_edges.append(small_edge)
                         big_edges.append(big_edge)
                         edges_3.append(edge3)
-
+                        #print(edges_3.index(edge3))
                         #Kept part of Ananyas code
                         vec = rg.Vector3d(p1 - p0)
                         line = rg.Line(p0,vec,25.0 + FAB_TOL).ToNurbsCurve()
@@ -336,10 +379,13 @@ for inter in intersections:
                         c_pt = big_edge.PointAt(0.5)
                         closest_pt0 = (inter.breps[0]).ClosestPoint(c_pt,1.0) 
                         closest_pt1 = (inter.breps[1]).ClosestPoint(c_pt,1.0)
+                        p0s.append(closest_pt0)
+                        p1s.append(closest_pt1)
                         guide_vec = (closest_pt0[5]) if (closest_pt0[0]) else None
                         
                         #push back big_edge
                         box_type = 0
+                        #check if the connection is between a box and a panel
                         if not (inter.layer.Split('-')[0] in B_TAGS or inter.layer.Split('-')[1] in B_TAGS):
                             if guide_vec is None and closest_pt1[0] :
                                 guide_vec = closest_pt1[5]
@@ -382,6 +428,8 @@ for inter in intersections:
                         bbe = bbe[0]
                         circs.append([small_edge,big_edge,cut])
                         circs.append(bbe)
+                        #qadd the real bracket to the intersection variable brackets
+                        inter.brackets.append(bbe)
                         tags.append(inter.layer)
 
                         box_tag = ""
@@ -395,38 +443,59 @@ for inter in intersections:
                             bracket_tag = "0{0}".format(bracket_index)
                         else:
                             bracket_tag = "{0}".format(bracket_index)
-
-                        inter.tag = "{0}-{1}-{2}".format(box_tag,inter.layer,bracket_tag)
-                        print("{0}-{1}-{2}".format(box_tag,inter.layer,bracket_tag))
+                        
+                        
+                        inter.tags.append("{0}-{1}-{2}".format(box_tag,inter.layer,bracket_tag))
+                        #print("{0}-{1}-{2}".format(box_tag,inter.layer,bracket_tag))
+                        #print("{0}-{1}-{2}".format(box_tag,inter.layer,bracket_tag))
                         bracket_index += 1
+    planes_.append(inter.text_planes)
     
 sc.doc = doc
 
-
+     
 
 for tag in tags:
     #print("tag type is {0}".format(type(tag)))
     if tag.Split('-')[0] in B_TAGS or tag.Split('-')[1] in B_TAGS:
         pass
 
+planes_txt = []
+tag_txt = []
+
+for inter in intersections:
+    for index, planes_tuple in enumerate(inter.text_planes):
+        for plane in planes_tuple:
+            planes_txt.append(plane)
+            tag_txt.append(inter.tags[index])
+
+panel_extrusion = Panel_Extrusions(intersections)
+panel_extrusion.populate_brackets_extrusion()
+all_panels = panel_extrusion.panels
+
+
+
 if bake:
     for part,tag in zip(circs,tags):
         bake_object(part,tag)
-    for inter in intersections:
-        if len(inter.text_planes) > 1:
-            inter.label1.Text = inter.tag
-            inter.label2.Text = inter.tag
-            inter.label1.Justification = TextJustification.MiddleCenter
-            inter.label2.Justification = TextJustification.MiddleCenter
-            inter.label1.FontIndex = doc.Fonts.FindOrCreate("Arial", False, False)
-            inter.label2.FontIndex = doc.Fonts.FindOrCreate("Arial", False, False)
-            inter.label1.Plane = inter.text_planes[0]       
-            inter.label2.Plane = inter.text_planes[1]
+    # for inter in intersections:
+    #         planes_txt.append(inter.text_planes[0])
+    #         planes_txt.append(inter.text_planes[1])
+            # tag_txt.append(inter.tag)
+            # tag_txt.append(inter.tag)
+            # inter.label1.Text = inter.tag
+            # inter.label2.Text = inter.tag
+            # inter.label1.Justification = TextJustification.MiddleCenter
+            # inter.label2.Justification = TextJustification.MiddleCenter
+            # inter.label1.FontIndex = doc.Fonts.FindOrCreate("Arial", False, False)
+            # inter.label2.FontIndex = doc.Fonts.FindOrCreate("Arial", False, False)
+            # inter.label1.Plane = inter.text_planes[0]       
+            # inter.label2.Plane = inter.text_planes[1]
 
-            print(inter.label2.Text)
-            doc.Objects.AddText(inter.label1)
-            doc.Objects.AddText(inter.label2)
-            doc.Views.Redraw()
+            # print(inter.label2.Text)
+            # doc.Objects.AddText(inter.label1)
+            # doc.Objects.AddText(inter.label2)
+            # doc.Views.Redraw()
 
 if bake_box:
     for part,tag in zip(circs,tags):
