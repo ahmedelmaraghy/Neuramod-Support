@@ -55,6 +55,7 @@ def trim_intersecting_panel_pair(cutting_brep, brep_needed, option_type, trim_ty
             edges_2.append(brep2_edges[index].EdgeCurve)
         b2_curve = rg.Curve.JoinCurves(edges_2)[0]
 
+        
         #create the loft from the extracted curves:
         uncapped_cutting_brep = rg.Brep.CreateFromLoft([b1_curve, b2_curve],rg.Point3d.Unset, rg.Point3d.Unset, rg.LoftType.Normal, False)[0]
         cutting_brep = rg.Brep.CapPlanarHoles(uncapped_cutting_brep, 0.001)
