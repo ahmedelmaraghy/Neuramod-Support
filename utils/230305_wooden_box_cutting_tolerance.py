@@ -44,7 +44,7 @@ def bake_object(obj,lay,parent_layer_name, col = 25):
     #Create Child layer
     if lay is not None: # setting layer
         if rd.Layer.IsValidName(lay):                   
-            print("here")
+            #print("here")
             child_layer = rd.Layer()
             child_layer.ParentLayerId = parent_layer.Id
             child_layer.Name = lay
@@ -71,7 +71,7 @@ def move_surface_and_scale(face, move_value = 0.5, scale_val = 2):
     # face.Extend(1, rg.Interval(0-move_value, 1+ move_value))
     scale_transform = rg.Transform.Scale(face.PointAt(0.5,0.5), scale_val)
     istransormed = face.Transform(scale_transform)
-    print(face)
+    #print(face)
     #move the surface 
     translation_vector = normal_vec * move_value * -1
     isTranslated = face.Translate(translation_vector)
@@ -79,10 +79,12 @@ def move_surface_and_scale(face, move_value = 0.5, scale_val = 2):
     return face
 
 def split_brep_by_face(face, brep):
+    #split the brep with box face
+    print("brep is {0}".format(brep))
+    print("face is {0}".format(face))
     split_breps = brep.Split(face.ToBrep(), 0.001)
-    print(split_breps)
-    if split_breps.Count > 0:
-        
+    print(split_breps.Count)
+    if split_breps.Count > 0:      
         final_breps = []
         for brep in split_breps:
             new_brep = rg.Brep.CapPlanarHoles(brep, 0.001)
@@ -90,7 +92,6 @@ def split_brep_by_face(face, brep):
         final_breps.sort(key = lambda brep: brep.GetVolume())
         return final_breps[-1]
     else:
-        
         return brep
         
     
@@ -118,7 +119,7 @@ all_panels_layer_names = []
 #create new layer names
 for id in ids:
     new_name = None
-    print(GetObjectLayer(id))
+    #print(GetObjectLayer(id))
     layer_name = GetObjectLayer(id)
 
     if len(layer_name) < 2:
