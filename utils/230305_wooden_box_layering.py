@@ -37,7 +37,7 @@ def bake_object(obj,lay,parent_layer_name, col = 25):
         sub_parent_layer = rd.Layer()
         sub_parent_layer.ParentLayerId = parent_layer.Id
         sub_parent_layer.Name = "{0}_walls".format(parent_layer_name)
-        index = sc.doc.Layers.Add(sub_parent_layer)
+        sub_parent_index = sc.doc.Layers.Add(sub_parent_layer)
 
     parent_layer = sc.doc.Layers[sub_parent_index]
 
@@ -105,20 +105,7 @@ def assign_box_names_to_box_faces(list_box_faces,box_centroid, parent_layer_name
         print(face.ToBrep())
         bake_object(brep,layer_name, parent_layer_name)
                
-            
 
-
-        #face = face.ToBrep()
-
-        
-            #cre
-
-        #sets the domain for each 
-        #get the centroid 
-# sort the first five faces based on area 
-# name them based on their position
-# same for the small ones 
-# bake them based on the layer they are in
 print(parent_layer_name)
 if bake:
     assign_box_names_to_box_faces(faces, cp_box, parent_layer_name)

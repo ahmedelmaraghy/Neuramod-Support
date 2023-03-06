@@ -159,7 +159,35 @@ def select_small_edge_and_adjust_both_edges(edge_curves, big_edge, edge_extentio
 
 
     return small_edge.ToNurbsCurve(), big_edge.ToNurbsCurve(), p0, p1, pp0, pp1, long_gov_edge
-    
+
+
+def final_adjustment_big_edge(small_edge, big_edge, edge_extention = 200):
+    """
+    retrims the big edge to take the right curve as there was discreoancy in this part
+    """
+    #extend small edge by a generous value
+    p0 = small_edge.PointAtStart
+    p1 = small_edge.PointAtEnd
+    small_edge = rg.Line(p0, p1)
+    small_edge.Extend(edge_extention, 0)
+    #curve = small_edge.ToNurbsCurve()
+    pp0 = big_edge.PointAtStart
+    pp1 = big_edge.PointAtEnd
+    big_edge = rg.Line(pp0, pp1)
+    big_edge.Extend(0, 0)
+
+    #find intersection point 
+    print(rg.Intersect.Intersection.LineLine(small_edge, big_edge, 0.001, 0.001)[0])
+    #Point0 = rg.Intersect.Intersection.CurveCurve(curve, big_edge.ToNurbsCurve(), 3, 3)[0].PointA
+    t_pt =rg.Intersect.Intersection.LineLine(small_edge, big_edge, 0.001, 0.001)[2]
+    Point0 = big_edge.PointAt(t_pt) 
+    print(t_pt)
+    #readjust small_edge:
+    big_edge = rg.Line(Point0, big_edge.To)
+
+    return big_edge.ToNurbsCurve(), big_edge.From
+
+
 def add_planes_for_text(p0, p1, pp0, pp1, move_text_distance1, move_text_distance2):
     """takes the points of the small and big line, creates planes for text insertion
     and moves it above of the brackets by a variable distance as preferred
@@ -198,11 +226,13 @@ class Panel_Extrusions(object):
                 if panel_id not in self.panels_ids:
                     self.panels_ids.append(panel_id)
                     self.panels.append(inter.breps[index])
-                                 
-                new_brep = inter.remove_brackets_from_panel(self.panels[self.panels_ids.index(panel_id)])
-                #replace the new trimmed panel in place of the one before operation
-                self.panels[self.panels_ids.index(panel_id)] = new_brep
 
+                if panel_id not in B_TAGS:  #to avoid reduction of the brackets from the box walls as till now they are surfaces only !!            
+                    new_brep = inter.remove_brackets_from_panel(self.panels[self.panels_ids.index(panel_id)])
+                    #replace the new trimmed panel in place of the one before operation
+                    self.panels[self.panels_ids.index(panel_id)] = new_brep
+
+                #return new_brep, bracket
     
 
 
@@ -230,6 +260,7 @@ class Intersection(object):
         """
         original_brep = brep
         for bracket in self.brackets:
+            print(bracket)
             original_brep = rg.Brep.CreateBooleanDifference(original_brep, bracket, 0.001)[0]
 
         return original_brep
@@ -259,7 +290,10 @@ for brep0,id0 in zip(breps,ids):
         #print("layer 1 is {0}".format(layer1))
         if (brep0 is not brep1) and (("%s-%s"%(layer0,layer1) not in [int.layer for int in intersections])) and (("%s-%s"%(layer1,layer0) not in [int.layer for int in intersections])) and (layer1 not in B_TAGS or layer0 not in B_TAGS):
             #print ("%s-%s"%(layer0,layer1)),"%s-%s"%(layer1,layer0), [int.layer for int in intersections]
-            bbx = rg.Intersect.Intersection.BrepBrep(brep0,brep1,inter_tol_breps)
+            actual_inter_tol = inter_tol_breps 
+            if layer1 in B_TAGS or layer0 in B_TAGS:
+                actual_inter_tol += add_B_tol
+            bbx = rg.Intersect.Intersection.BrepBrep(brep0,brep1,actual_inter_tol)
             circles.append(bbx[1])
             if bbx and len(bbx[1])>0:
                 list_intersections = []
@@ -357,8 +391,8 @@ for inter in intersections:
                         
                         #planes_.append(planes_tuple)
                         #debugging
-                        sm_edges.append(small_edge)
-                        big_edges.append(big_edge)
+                        #sm_edges.append(small_edge)
+                        #big_edges.append(big_edge)
                         edges_3.append(edge3)
                         #print(edges_3.index(edge3))
                         #Kept part of Ananyas code
@@ -368,13 +402,15 @@ for inter in intersections:
                         vec1 = rg.Vector3d(pp1 - pp0)
                         line1 = rg.Line(pp0,vec1,25.0 + FAB_TOL).ToNurbsCurve()
                         big_edge = line1
+                        #GET THE MIDPOINT OF THE BIGEDGE?
                         big_edge.Domain = rg.Interval(0,1)
                         c_pt = big_edge.PointAt(0.5)
                         closest_pt0 = (inter.breps[0]).ClosestPoint(c_pt,1.0) 
                         closest_pt1 = (inter.breps[1]).ClosestPoint(c_pt,1.0)
-                        p0s.append(closest_pt0)
-                        p1s.append(closest_pt1)
+                        
+                        #p1s.append(closest_pt0[5])
                         guide_vec = (closest_pt0[5]) if (closest_pt0[0]) else None
+                        
                         
                         #push back big_edge
                         box_type = 0
@@ -385,17 +421,29 @@ for inter in intersections:
                             #print (guide_vec)
                             guide_vec.Unitize()
                             guide_vec *= -3.20
+                            
                             big_edge.Translate(guide_vec)
+
                         else:
                             box_type = 1
+                        
+
+
+                        big_edge, pp0 = final_adjustment_big_edge(small_edge, big_edge, 200)
+                        sm_edges.append(small_edge)
+                        big_edges.append(big_edge)
+                        p0s.append(pp0)
+                        p1s.append(pp1)
                         if small_edge and big_edge is not None:
                             fil = rg.Curve.CreateFilletCurves(small_edge,p0,big_edge,pp0,0,True,True,True,True,0.01)
-                            #print (fil)
+                            p1s.append(fil[0])
+                            
 #                            rg.PolyCurve.SegmentCurve
                             if fil[0].SegmentCount<2 or min([fil[0].SegmentCurve(i).GetLength() for i in range(fil[0].SegmentCount)])<20:
                                 #print ('fli')
                                 fil = rg.Curve.CreateFilletCurves(small_edge,p0,big_edge, pp1,0,True,True,True,True,0.01)
                             fil = fil[0] if len(fil)==1 else None
+                            
                             off = fil.Offset(rg.Point3d((fil.PointAtEnd+fil.PointAtStart)/2),rg.Plane(fil.PointAtEnd,fil.PointAtStart,fil.PointAt(0.5)).ZAxis,3.2,0.01,0.01,False,rg.CurveOffsetCornerStyle.Sharp,rg.CurveOffsetEndStyle.Flat)
                             if not box_type: b1,b2 = rg.Extrusion.Create(off[0].ToNurbsCurve(),9.0 + FAB_TOL, True),rg.Extrusion.Create(off[0].ToNurbsCurve(),-9.0 - FAB_TOL,True)
                             else : b1,b2 = rg.Extrusion.Create(off[0].ToNurbsCurve(),15.0 + FAB_TOL, True),rg.Extrusion.Create(off[0].ToNurbsCurve(),-15.0 - FAB_TOL,True)
