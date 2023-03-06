@@ -9,6 +9,7 @@ import System
 import Rhino
 from System import Array
 import rhinoscriptsyntax as rs
+import random as r
 
 
 
@@ -37,20 +38,20 @@ def bake_object(obj,lay,parent_layer_name, col = 25):
         sub_parent_layer.ParentLayerId = parent_layer.Id
         sub_parent_layer.Name = "{0}_walls".format(parent_layer_name)
         index = sc.doc.Layers.Add(sub_parent_layer)
-    else:
-        parent_layer = sc.doc.Layers[sub_parent_index]
+
+    parent_layer = sc.doc.Layers[sub_parent_index]
 
     #Create Child layer
     if lay is not None: # setting layer
         if rd.Layer.IsValidName(lay):           
             index = sc.doc.Layers.Find(lay, True)
-            if index < 0: # if the layer doesn't exist
-                print("here")
-                child_layer = rd.Layer()
-                child_layer.ParentLayerId = parent_layer.Id
-                child_layer.Name = lay
-                child_layer.Color = System.Drawing.Color.FromArgb(255,r.randint(0,255),0,r.randint(0,255))
-                index = sc.doc.Layers.Add(child_layer)
+            #if index < 0: # if the layer doesn't exist
+            print("here")
+            child_layer = rd.Layer()
+            child_layer.ParentLayerId = parent_layer.Id
+            child_layer.Name = lay
+            child_layer.Color = System.Drawing.Color.FromArgb(255,r.randint(0,255),0,r.randint(0,255))
+            index = sc.doc.Layers.Add(child_layer)
             attr.LayerIndex = index
 
     if( sc.doc.Objects.AddBrep(obj, attr) != System.Guid.Empty ):
@@ -74,9 +75,8 @@ def assign_box_names_to_box_faces(list_box_faces,box_centroid, parent_layer_name
         face.SetDomain(1, rg.Interval(0,1))
         #get normal at midpoint
         norm_face = rg.Surface.NormalAt(face, 0.5,0.5)
-        cp_face = rg.Surface.PointAt(face, 0.5,0.5)
+
         if index < 5: #the big faces
-            print(norm_face * ref_vec) 
             if abs(norm_face * ref_vec) > 0.95: #back
                 layer_name = 'BA'
             elif norm_face * rg.Vector3d.XAxis > 0.95: #right

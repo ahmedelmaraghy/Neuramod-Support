@@ -20,6 +20,22 @@ def GetObjectLayer(x):
     layer = doc.Layers[index]
     return layer.Name
 
+def bake_object(obj,lay,col = 25):
+    if obj is not None:
+        attr = Rhino.DocObjects.ObjectAttributes()
+        
+    if lay is not None: # setting layer
+        if rd.Layer.IsValidName(lay):
+            layerIndex = sc.doc.Layers.Find(lay, True)
+            if layerIndex < 0: # if the layer doesn't exist
+                layer = rd.Layer()
+                layer.Name = lay
+                layer.Color = System.Drawing.Color.FromArgb(255,r.randint(0,255),0,r.randint(0,255))
+                layerIndex = sc.doc.Layers.Add(layer)
+            attr.LayerIndex = layerIndex
+            displayColor = Rhino.Display.ColorRGBA(layerIndex)
+            sc.doc.Objects.AddBrep(obj, attr)
+
 def remove_duplicate_lines_from_polycurve(polycurve, tolerance):
     """Removes the duplicates of intersection lines that may occur when intersecting the 2 breps
     """
@@ -30,9 +46,6 @@ def remove_duplicate_lines_from_polycurve(polycurve, tolerance):
         if curve.GetLength() > 20:
             curve.Domain = rg.Interval(0,1)
             lines.append(curve)
-
-
-
 
     duplicate_lines = []
     unique_lines = []
@@ -220,36 +233,23 @@ class Intersection(object):
             original_brep = rg.Brep.CreateBooleanDifference(original_brep, bracket, 0.001)[0]
 
         return original_brep
-
-            
-
-def bake_object(obj,lay,col = 25):
-    if obj is not None:
-        attr = Rhino.DocObjects.ObjectAttributes()
-    if lay is not None: # setting layer
-        if rd.Layer.IsValidName(lay):
-            layerIndex = sc.doc.Layers.Find(lay, True)
-            if layerIndex < 0: # if the layer doesn't exist
-                layer = rd.Layer()
-                layer.Name = lay
-                layer.Color = System.Drawing.Color.FromArgb(255,r.randint(0,255),0,r.randint(0,255))
-                layerIndex = sc.doc.Layers.Add(layer)
-            attr.LayerIndex = layerIndex
-    
-#    displayColor = Rhino.Display.ColorRGBA(layerIndex)
-    sc.doc.Objects.AddBrep(obj, attr)
+   
 
 FAB_TOL = 0.15
 
 B_TAGS = ('TO','BO','LF','RI','BA','IT','IB','IL','IR')
 
 inter_radius = 10.0
-
-
-lines =  remove_duplicate_lines_from_polycurve(lines_list, dup_lines_tol)
-
-
 intersections = []
+
+circles = []
+sm_edges = []
+big_edges = []
+p0s = []
+p1s = []
+planes_ = []
+edges_3 = []
+
 #get the intersection curves (line likes) between each brep and the ther other 
 for brep0,id0 in zip(breps,ids):
     layer0 = GetObjectLayer(id0) #layer0 is the name of the layer of the baked brep in the actual rhino file
@@ -260,9 +260,11 @@ for brep0,id0 in zip(breps,ids):
         if (brep0 is not brep1) and (("%s-%s"%(layer0,layer1) not in [int.layer for int in intersections])) and (("%s-%s"%(layer1,layer0) not in [int.layer for int in intersections])) and (layer1 not in B_TAGS or layer0 not in B_TAGS):
             #print ("%s-%s"%(layer0,layer1)),"%s-%s"%(layer1,layer0), [int.layer for int in intersections]
             bbx = rg.Intersect.Intersection.BrepBrep(brep0,brep1,inter_tol_breps)
+            circles.append(bbx[1])
             if bbx and len(bbx[1])>0:
                 list_intersections = []
                 for bx in bbx[1]:
+                    circles.append(bx)
                     if bx.GetLength() > 25:
                         #we need to do somthing to prevent duplicates
                         if bx.IsLinear():
@@ -272,6 +274,7 @@ for brep0,id0 in zip(breps,ids):
                             #print("output lines count is {}")
                             if len(output_line) == 1:
                                 list_intersections.append(output_line[0])
+                                circles.append(output_line[0])
                             else:
                                 print ("we have a problem !!!")
 
@@ -281,17 +284,7 @@ for brep0,id0 in zip(breps,ids):
                 list_intersections = remove_duplicate_lines(list_intersections, dup_lines_tol)
                 interX = Intersection(list_intersections,"%s-%s"%(layer0,layer1),[brep0,brep1])
                 intersections.append(interX)
-circles = []
-sm_edges = []
-big_edges = []
-p0s = []
-p1s = []
-planes_ = []
-edges_3 = []
-#add a numbering for each bracket
-#add a function that adds the plane and origin to which the number should be written 
-#add finally for all intersecions adding the number in rhino 
-#
+
 
 circs,tags = [],[]
 for inter in intersections:
@@ -478,24 +471,7 @@ all_panels = panel_extrusion.panels
 if bake:
     for part,tag in zip(circs,tags):
         bake_object(part,tag)
-    # for inter in intersections:
-    #         planes_txt.append(inter.text_planes[0])
-    #         planes_txt.append(inter.text_planes[1])
-            # tag_txt.append(inter.tag)
-            # tag_txt.append(inter.tag)
-            # inter.label1.Text = inter.tag
-            # inter.label2.Text = inter.tag
-            # inter.label1.Justification = TextJustification.MiddleCenter
-            # inter.label2.Justification = TextJustification.MiddleCenter
-            # inter.label1.FontIndex = doc.Fonts.FindOrCreate("Arial", False, False)
-            # inter.label2.FontIndex = doc.Fonts.FindOrCreate("Arial", False, False)
-            # inter.label1.Plane = inter.text_planes[0]       
-            # inter.label2.Plane = inter.text_planes[1]
 
-            # print(inter.label2.Text)
-            # doc.Objects.AddText(inter.label1)
-            # doc.Objects.AddText(inter.label2)
-            # doc.Views.Redraw()
 
 if bake_box:
     for part,tag in zip(circs,tags):
@@ -505,16 +481,6 @@ if bake_box:
 
 
 
-        
-
-        
-
-
-
-
- 
-    
-sc.doc = ghdoc
 
 intersections = intersections
 circs = tree(circs)
