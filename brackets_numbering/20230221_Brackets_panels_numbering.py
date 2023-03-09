@@ -36,48 +36,88 @@ def bake_object(obj,lay,col = 25):
             displayColor = Rhino.Display.ColorRGBA(layerIndex)
             sc.doc.Objects.AddBrep(obj, attr)
 
+def bake_object_v2(obj,lay,parent_layer_name, col = 25):
+    sc.doc = Rhino.RhinoDoc.ActiveDoc
+    if obj is not None:
+        attr = Rhino.DocObjects.ObjectAttributes()
+    
+    # Get the index of the layer you want to retrieve
+    parent_index = sc.doc.Layers.Find(parent_layer_name, True)
+    # Get the name of the layer
+    parent_layer =  sc.doc.Layers[parent_index]
+    
+    sub_parent_index = sc.doc.Layers.Find("{0}_panels_fabri_ready".format(parent_layer_name), True)
+    if sub_parent_index < 0:
+        sub_parent_layer = rd.Layer()
+        sub_parent_layer.ParentLayerId = parent_layer.Id
+        sub_parent_layer.Name = "{0}_panels_fabri_ready".format(parent_layer_name)
+        sub_parent_index = sc.doc.Layers.Add(sub_parent_layer)
+
+
+    parent_layer = sc.doc.Layers[sub_parent_index]
+
+    #Create Child layer
+    if lay is not None: # setting layer
+        if rd.Layer.IsValidName(lay):                   
+            #print("here")
+            child_layer = rd.Layer()
+            child_layer.ParentLayerId = parent_layer.Id
+            child_layer.Name = lay
+            child_layer.Color = System.Drawing.Color.FromArgb(255,r.randint(0,255),0,r.randint(0,255))
+            index = sc.doc.Layers.Add(child_layer)
+            attr.LayerIndex = index
+
+    if( sc.doc.Objects.AddBrep(obj, attr) != System.Guid.Empty ):
+        rc = Rhino.Commands.Result.Success
+        sc.doc.Views.Redraw()
+
 def remove_duplicate_lines_from_polycurve(polycurve, tolerance):
     """Removes the duplicates of intersection lines that may occur when intersecting the 2 breps
     """
+    #print("we are here")
     # create a list to store the unique lines
     lines = []
+    #print(polycurve.Explode())
     for curve in polycurve.Explode():
         #print("curve is linear : {0}".format(curve.IsLinear()))
         if curve.GetLength() > 20:
             curve.Domain = rg.Interval(0,1)
             lines.append(curve)
 
-    duplicate_lines = []
-    unique_lines = []
+    if len(lines) == 1: #only one existing line
+        return lines
+    else:
+        duplicate_lines = []
+        unique_lines = []
+        
+        for i, uni_l in enumerate(lines):
+            #print (type(uni_l))
+            for j, line in enumerate(lines[i+1:]):
+                #check if we can get line out of it:         
+                # iterate over the input lines
+                #if distance is less than tolerance and direction is same or opposite
+                #and the length almost equal then skip and print duplicate line
+                len_uni_l = uni_l.GetLength()
+                len_line = line.GetLength()
+                dir_uni_l = uni_l.TangentAt(0.5)
+                dir_line = line.TangentAt(0.5)
+                #dir_uni_l.Unitize()
+                #dir_line.Unitize()
+                distance = uni_l.PointAt(0.5).DistanceTo(line.PointAt(0.5))
+                #print("distance is {0}".format(distance))
+                #print(rg.NurbsCurve.IsDuplicate(uni_l, line, True, tolerance))
+                if (len_uni_l / len_line > 0.90 and len_uni_l / len_line < 1.1) and abs(dir_line * dir_uni_l) > 0.95 and distance < tolerance:
+                #if rg.NurbsCurve.IsDuplicate(uni_l, line, True, tolerance):
+                    #print("lines are too close")
+                    duplicate_lines.append(line)
+
+                
+        for uni_l in lines:
+            if uni_l not in duplicate_lines:
+                unique_lines.append(uni_l) 
+
+        return unique_lines
     
-    for i, uni_l in enumerate(lines):
-        #print (type(uni_l))
-        for j, line in enumerate(lines[i+1:]):
-            #check if we can get line out of it:         
-            # iterate over the input lines
-            #if distance is less than tolerance and direction is same or opposite
-            #and the length almost equal then skip and print duplicate line
-            len_uni_l = uni_l.GetLength()
-            len_line = line.GetLength()
-            dir_uni_l = uni_l.TangentAt(0.5)
-            dir_line = line.TangentAt(0.5)
-            #dir_uni_l.Unitize()
-            #dir_line.Unitize()
-            distance = uni_l.PointAt(0.5).DistanceTo(line.PointAt(0.5))
-            #print("distance is {0}".format(distance))
-            #print(rg.NurbsCurve.IsDuplicate(uni_l, line, True, tolerance))
-            if (len_uni_l / len_line > 0.90 and len_uni_l / len_line < 1.1) and abs(dir_line * dir_uni_l) > 0.95 and distance < tolerance:
-            #if rg.NurbsCurve.IsDuplicate(uni_l, line, True, tolerance):
-                #print("lines are too close")
-                duplicate_lines.append(line)
-
-            
-    for uni_l in lines:
-        if uni_l not in duplicate_lines:
-            unique_lines.append(uni_l) 
-
-    return unique_lines
-
 def remove_duplicate_lines(lines, tolerance):
     """Removes the duplicates of intersection lines that may occur when intersecting the 2 breps
     """
@@ -110,7 +150,7 @@ def remove_duplicate_lines(lines, tolerance):
 
     return unique_lines
 
-def select_small_edge_and_adjust_both_edges(edge_curves, big_edge, edge_extention = 10):
+def select_small_edge_and_adjust_both_edges(edge_curves, big_edge, edge_extention = 20):
     joined_crvs_list = []
     for curve in edge_curves:
         if curve is not big_edge:
@@ -119,12 +159,10 @@ def select_small_edge_and_adjust_both_edges(edge_curves, big_edge, edge_extentio
     curves = rg.Curve.JoinCurves(joined_crvs_list) 
     #print(curves)
     small_edge = None
-    governing_edge = None
     long_gov_edge = joined_crvs_list[-1] #longest
     if curves.Count == 1:
        edges = curves[0].DuplicateSegments()
        small_edge = edges[2]
-       governing_edge = (edges[1]) if edges[1].GetLength() > edges[3].GetLength() else (edges[3])
 
     else: 
         print("we have a problem, inconsistent curve shape")
@@ -160,6 +198,35 @@ def select_small_edge_and_adjust_both_edges(edge_curves, big_edge, edge_extentio
 
     return small_edge.ToNurbsCurve(), big_edge.ToNurbsCurve(), p0, p1, pp0, pp1, long_gov_edge
 
+def select_small_edge_and_adjust_both_edges_exceptions(small_edge, big_edge, edge_extention):
+    
+    p0 = small_edge.PointAtStart
+    p1 = small_edge.PointAtEnd
+    small_edge_line = rg.Line(p0, p1)
+    small_edge_line.Extend(edge_extention, 0)
+    pp0 = big_edge.PointAtStart
+    pp1 = big_edge.PointAtEnd
+    big_edge = rg.Line(pp0, pp1)
+    isCut = rg.Intersect.Intersection.LineLine(small_edge_line, big_edge, 0.001, 0.001)[0]
+    if not isCut: #we need to reverse the line
+        small_edge_line.Extend(-edge_extention, edge_extention)
+        small_edge = rg.Line(p1, p0)
+    else: 
+        small_edge = rg.Line(p0, p1)
+    t_big = rg.Intersect.Intersection.LineLine(small_edge_line, big_edge, 0.001, 0.001)[2]
+    Point0 = big_edge.PointAt(t_big) 
+    vec1 = small_edge.To - small_edge.From
+    vec1.Unitize()
+    vec2 = big_edge.To - Point0
+    vec2.Unitize()
+    if vec1 * vec2 < 0:
+        big_edge = rg.Line(big_edge.From, big_edge.To)
+    else:
+        big_edge = rg.Line(big_edge.To, big_edge.From)
+    
+    return small_edge.ToNurbsCurve(), big_edge.ToNurbsCurve(), small_edge.From, small_edge.To, big_edge.From, big_edge.To
+        
+
 
 def final_adjustment_big_edge(small_edge, big_edge, edge_extention = 200):
     """
@@ -177,11 +244,11 @@ def final_adjustment_big_edge(small_edge, big_edge, edge_extention = 200):
     big_edge.Extend(0, 0)
 
     #find intersection point 
-    print(rg.Intersect.Intersection.LineLine(small_edge, big_edge, 0.001, 0.001)[0])
+    #print(rg.Intersect.Intersection.LineLine(small_edge, big_edge, 0.001, 0.001)[0])
     #Point0 = rg.Intersect.Intersection.CurveCurve(curve, big_edge.ToNurbsCurve(), 3, 3)[0].PointA
     t_pt =rg.Intersect.Intersection.LineLine(small_edge, big_edge, 0.001, 0.001)[2]
     Point0 = big_edge.PointAt(t_pt) 
-    print(t_pt)
+    #print(t_pt)
     #readjust small_edge:
     big_edge = rg.Line(Point0, big_edge.To)
 
@@ -206,7 +273,7 @@ def add_planes_for_text(p0, p1, pp0, pp1, move_text_distance1, move_text_distanc
     small_plane = rg.Plane(small_origin, small_X, small_Y)
     big_plane = rg.Plane(big_origin, big_X, big_Y)
     
-    return (small_plane, big_plane), small_plane.Origin, big_plane.Origin
+    return [small_plane, big_plane], small_plane.Origin, big_plane.Origin
 
 class Panel_Extrusions(object):
     def __init__(self,intersections):
@@ -259,9 +326,11 @@ class Intersection(object):
         produces the final panel where the brackets are split from the panel, producing the final trimmed panel only from one side of brackets
         """
         original_brep = brep
-        for bracket in self.brackets:
-            print(bracket)
-            original_brep = rg.Brep.CreateBooleanDifference(original_brep, bracket, 0.001)[0]
+        
+        for bracket in self.brackets: 
+            if((rg.Brep.CreateBooleanDifference(original_brep, bracket, 0.001)).Count> 0):
+                original_brep = rg.Brep.CreateBooleanDifference(original_brep, bracket, 0.001)[0]
+            
 
         return original_brep
    
@@ -294,11 +363,10 @@ for brep0,id0 in zip(breps,ids):
             if layer1 in B_TAGS or layer0 in B_TAGS:
                 actual_inter_tol += add_B_tol
             bbx = rg.Intersect.Intersection.BrepBrep(brep0,brep1,actual_inter_tol)
-            circles.append(bbx[1])
             if bbx and len(bbx[1])>0:
                 list_intersections = []
                 for bx in bbx[1]:
-                    circles.append(bx)
+                    
                     if bx.GetLength() > 25:
                         #we need to do somthing to prevent duplicates
                         if bx.IsLinear():
@@ -308,7 +376,7 @@ for brep0,id0 in zip(breps,ids):
                             #print("output lines count is {}")
                             if len(output_line) == 1:
                                 list_intersections.append(output_line[0])
-                                circles.append(output_line[0])
+                                
                             else:
                                 print ("we have a problem !!!")
 
@@ -316,6 +384,7 @@ for brep0,id0 in zip(breps,ids):
                         pass
                         #print ('small')
                 list_intersections = remove_duplicate_lines(list_intersections, dup_lines_tol)
+                #circles.append(list_intersections)
                 interX = Intersection(list_intersections,"%s-%s"%(layer0,layer1),[brep0,brep1])
                 intersections.append(interX)
 
@@ -352,10 +421,11 @@ for inter in intersections:
                 cutters.extend([curve for curve in bpx1[1]])
                 #from the circle plane, split this circular surface into pcs
                 cuts = plane.Split.Overloads[IEnumerable[rg.Curve], System.Double](cutters,0.001)
- 
-                
                 #iterate over each surface cut
+                i = 0
                 for cut in cuts:
+                    circles.append(cut)
+                    #print(inter.layer)
                     count = 0
                     pcount = 0
                     flag = 0
@@ -364,37 +434,85 @@ for inter in intersections:
                         count += 1
                         if edge.Degree == 1:
                             pcount += 1
-                    #print (cut.GetArea())
+                    #print(count)
                     #if edges in a cut is more than 4 (dont fuckin know why),
                     #and if the area is more than a threshold 
-                    if count > 4 and cut.GetArea() > threshold and pcount > 4 and pcount < 7: #pcount < 6 was added to account for any irregularites 
-                        #of brackets that may cause problems!!
-                        #circles.append(cut)
+                    # print("{0}".format(((inter.layer != "03-08" and inter.layer != "08-03" and box_number != 26) and
+                    #       (inter.layer != "IB-07" and inter.layer != "07-IB" and box_number != 3)
+                    #       and count > 4 and cut.GetArea() > threshold 
+                    #       and cut.GetArea() < max_area_threshold and pcount > 4 and pcount < 8)) )
+                    # if(((inter.layer == "03-08" or inter.layer == "08-03") and box_number == 26) or
+                    #     ((inter.layer == "IB-07" or inter.layer == "07-IB") and box_number == 3)):
+                    #     max_area_threshold = 400
+                    #     threshold = 190
+                    #     pcount = 5 #acceptable number only because this is not a criteria already for these exceptions
+                    #     count = 5 #acceptable number only because this is not a criteria already for these exceptions
+
+                    print("count is {0}, cut area is {1} and pcount is {2} and max threshold is {3}".format(count, cut.GetArea(), pcount,max_area_threshold ))
+                    if (count > 4 and cut.GetArea() > threshold and cut.GetArea() < max_area_threshold and pcount > 4 and pcount < 8) : #pcount < 7 was added to account for any irregularites 
+                        #of brackets that may cause problems!!                        
                         edge_curves = [edge.EdgeCurve for edge in cut.Edges if edge.Degree == 1]
                         edge_curves.sort(key = lambda e :e.GetLength())
                         #circles.append(edge_curves)
                         edge_count = 0
                         big_edge = edge_curves[-1]
                         for e in edge_curves:
-                            #change from Ananya's code
-                            #if abs(e.GetLength() - inter_radius) < 0.1: #!!! why 0.1
-                                #big_edge = e
                             edge_count +=1
-                        #new way for selecting the small edge is to join the curves and select the third one in the list:
-                        small_edge, big_edge, p0, p1, pp0, pp1, edge3 = select_small_edge_and_adjust_both_edges(edge_curves, big_edge)
+                        small_edge = None
+                        p0 = None
+                        p1 = None
+                        pp0 = None
+                        pp1 = None
+                        print("KHARAAA")
+                        if(inter.layer == "03-08" or inter.layer == "08-03" and box_number == 26):
+                            if cut.GetArea() < 190:
+                                continue
+                            print("we are khara")
+                            #print(inter.layer)
+                            for curve in edge_curves:
+                                pt_st = curve.PointAtStart
+                                pt_end = curve.PointAtEnd
+                                line = rg.Line(pt_st, pt_end)
+                                if line.Length > 12 and line.Length < 13:
+                                    big_edge = curve
+                                if line.Length > 5.9 and line.Length < 6.1:
+                                    edge_curves = [curve]
+                            small_edge, big_edge, p0, p1, pp0, pp1 = select_small_edge_and_adjust_both_edges_exceptions(edge_curves[0], big_edge, 100)
+                        elif(inter.layer == "IB-07" or inter.layer == "07-IB" and box_number == 3):
+                            if cut.GetArea() < 190:
+                                continue
+                            small_edge = edge_curves[3]
+                            big_edge = edge_curves[-1]
+                            small_edge, big_edge, p0, p1, pp0, pp1 = select_small_edge_and_adjust_both_edges_exceptions(small_edge, big_edge, 100)
+                        elif(inter.layer == "BA-02" or inter.layer == "02-BA" and box_number == 26):
+                            if cut.GetArea() > 125 or cut.GetArea() < 110:
+                                continue
+                            small_edge = edge_curves[2]
+                            big_edge = edge_curves[5]
+                            small_edge, big_edge, p0, p1, pp0, pp1 = select_small_edge_and_adjust_both_edges_exceptions(small_edge, big_edge, 100)
+                        elif(inter.layer == "BA-02" or inter.layer == "02-BA" and box_number == 26):
+                            if cut.GetArea() > 125 or cut.GetArea() < 110:
+                                continue
+                            small_edge = edge_curves[2]
+                            big_edge = edge_curves[5]
+                            small_edge, big_edge, p0, p1, pp0, pp1 = select_small_edge_and_adjust_both_edges_exceptions(small_edge, big_edge, 100)
+                        else:
+                            big_edges.append(big_edge)
+                            print(inter.layer)
+                            small_edge, big_edge, p0, p1, pp0, pp1, edge3 = select_small_edge_and_adjust_both_edges(edge_curves, big_edge)
                         
+                        
+                        sm_edges.append(small_edge)
+                        big_edges.append(big_edge)
+                        p0s.append(pp0)
+                        #new way for selecting the small edge is to join the curves and select the third one in the list:
+                        
+                       
 
                         #add a plane for adding later on the appropriate tags
-                        planes_tuple, px, py = add_planes_for_text(p0, p1, pp0, pp1, move_text_distance1, move_text_distance2) #both planes are appended
-                        inter.text_planes.append(planes_tuple)
-                        #print(planes_tuple)
-                        
-                        #planes_.append(planes_tuple)
-                        #debugging
-                        #sm_edges.append(small_edge)
-                        #big_edges.append(big_edge)
-                        edges_3.append(edge3)
-                        #print(edges_3.index(edge3))
+                        planes_pair, px, py = add_planes_for_text(p0, p1, pp0, pp1, move_text_distance1, move_text_distance2) #both planes are appended
+
+                        #edges_3.append(edge3)
                         #Kept part of Ananyas code
                         vec = rg.Vector3d(p1 - p0)
                         line = rg.Line(p0,vec,25.0 + FAB_TOL).ToNurbsCurve()
@@ -408,7 +526,7 @@ for inter in intersections:
                         closest_pt0 = (inter.breps[0]).ClosestPoint(c_pt,1.0) 
                         closest_pt1 = (inter.breps[1]).ClosestPoint(c_pt,1.0)
                         
-                        #p1s.append(closest_pt0[5])
+                        p1s.append(closest_pt0[5])
                         guide_vec = (closest_pt0[5]) if (closest_pt0[0]) else None
                         
                         
@@ -418,7 +536,7 @@ for inter in intersections:
                         if not (inter.layer.Split('-')[0] in B_TAGS or inter.layer.Split('-')[1] in B_TAGS):
                             if guide_vec is None and closest_pt1[0] :
                                 guide_vec = closest_pt1[5]
-                            #print (guide_vec)
+                            print (guide_vec)
                             guide_vec.Unitize()
                             guide_vec *= -3.20
                             
@@ -466,31 +584,36 @@ for inter in intersections:
                                     fillet_indices.append(num)
                             indices = fillet_indices
                             bbe = rg.Brep.CreateFilletEdges(bool,indices,[2.0 for _ in range(len(indices))],[2.0 for _ in range(len(indices))],rg.BlendType.Fillet,rg.RailType.RollingBall,0.0001)
-                        bbe = bbe[0]
-                        circs.append([small_edge,big_edge,cut])
-                        circs.append(bbe)
+
                         #qadd the real bracket to the intersection variable brackets
-                        inter.brackets.append(bbe)
-                        tags.append(inter.layer)
-
-                        box_tag = ""
-                        if box_number < 10:
-                            box_tag = "0{0}".format(box_number)
+                        if "00" in inter.layer  and "TO" in inter.layer and i == 0:
+                            print('i is : {0}'.format(i)) 
                         else:
-                            box_tag = "{0}".format(box_number)
+                            bbe = bbe[0]
+                            circs.append([small_edge,big_edge,cut])
+                            circs.append(bbe)
+                            inter.text_planes.append(planes_pair)
+                            inter.brackets.append(bbe)
+                            tags.append(inter.layer)
 
-                        bracket_tag = ""
-                        if bracket_index < 10:
-                            bracket_tag = "0{0}".format(bracket_index)
-                        else:
-                            bracket_tag = "{0}".format(bracket_index)
-                        
-                        
-                        inter.tags.append("{0}-{1}-{2}".format(box_tag,inter.layer,bracket_tag))
-                        #print("{0}-{1}-{2}".format(box_tag,inter.layer,bracket_tag))
-                        #print("{0}-{1}-{2}".format(box_tag,inter.layer,bracket_tag))
-                        bracket_index += 1
-    planes_.append(inter.text_planes)
+                            box_tag = ""
+                            if box_number < 10:
+                                box_tag = "0{0}".format(box_number)
+                            else:
+                                box_tag = "{0}".format(box_number)
+
+                            bracket_tag = ""
+                            if bracket_index < 10:
+                                bracket_tag = "0{0}".format(bracket_index)
+                            else:
+                                bracket_tag = "{0}".format(bracket_index)
+                            
+                            
+                            inter.tags.append("{0}-{1}-{2}".format(box_tag,inter.layer,bracket_tag))
+                            bracket_index += 1
+                    i += 1 
+    if len(inter.text_planes) > 0:
+        planes_.append(inter.text_planes)
     
 sc.doc = doc
 
@@ -502,13 +625,29 @@ for tag in tags:
         pass
 
 planes_txt = []
+tag_txt_by_layer = []
+tag_txt_layers = []
 tag_txt = []
-
+all_brackets = []
 for inter in intersections:
-    for index, planes_tuple in enumerate(inter.text_planes):
-        for plane in planes_tuple:
-            planes_txt.append(plane)
-            tag_txt.append(inter.tags[index])
+    all_brackets.append(inter.brackets)
+    for index, planes_pair in enumerate(inter.text_planes): 
+
+        pt0 =inter.breps[0].ClosestPoint(planes_pair[0].Origin)
+        pt1 =inter.breps[0].ClosestPoint(planes_pair[1].Origin)
+        dist0 = planes_pair[0].Origin.DistanceTo(pt0)
+        dist1 = planes_pair[1].Origin.DistanceTo(pt1)
+        if dist1 < dist0:
+            planes_pair.reverse()
+        for i, plane in enumerate(planes_pair):
+             if not inter.layer.Split('-')[i] in B_TAGS:
+                tag_txt_layers.append(inter.layer.Split('-')[i])
+                planes_txt.append(plane)
+                tag_txt.append(inter.tags[index]) 
+
+        
+       
+            
 
 panel_extrusion = Panel_Extrusions(intersections)
 panel_extrusion.populate_brackets_extrusion()
@@ -516,19 +655,34 @@ all_panels = panel_extrusion.panels
 
 
 
-if bake:
-    for part,tag in zip(circs,tags):
-        bake_object(part,tag)
-
-
-if bake_box:
-    for part,tag in zip(circs,tags):
-        if tag.Split('-')[0] in B_TAGS or tag.Split('-')[1] in B_TAGS:
-            bake_object(part,tag)
-
-
-
+if bake_panels:
+    for panel, id in zip(panel_extrusion.panels, panel_extrusion.panels_ids):
+        if id not in B_TAGS:
+            bake_object_v2(panel, id, parent_layer_name)
 
 
 intersections = intersections
 circs = tree(circs)
+
+# if bake:
+#     for part,tag in zip(circs,tags):
+#         bake_object(part,tag)
+
+# for inter in intersections:
+    #         planes_txt.append(inter.text_planes[0])
+    #         planes_txt.append(inter.text_planes[1])
+            # tag_txt.append(inter.tag)
+            # tag_txt.append(inter.tag)
+            # inter.label1.Text = inter.tag
+            # inter.label2.Text = inter.tag
+            # inter.label1.Justification = TextJustification.MiddleCenter
+            # inter.label2.Justification = TextJustification.MiddleCenter
+            # inter.label1.FontIndex = doc.Fonts.FindOrCreate("Arial", False, False)
+            # inter.label2.FontIndex = doc.Fonts.FindOrCreate("Arial", False, False)
+            # inter.label1.Plane = inter.text_planes[0]       
+            # inter.label2.Plane = inter.text_planes[1]
+
+            # print(inter.label2.Text)
+            # doc.Objects.AddText(inter.label1)
+            # doc.Objects.AddText(inter.label2)
+            # doc.Views.Redraw()

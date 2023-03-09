@@ -37,7 +37,8 @@ def bake_object(obj,lay,parent_layer_name, col = 25):
         sub_parent_layer = rd.Layer()
         sub_parent_layer.ParentLayerId = parent_layer.Id
         sub_parent_layer.Name = "{0}_panels".format(parent_layer_name)
-        sub_parent_layer = sc.doc.Layers.Add(sub_parent_layer)
+        sub_parent_index = sc.doc.Layers.Add(sub_parent_layer)
+
 
     parent_layer = sc.doc.Layers[sub_parent_index]
 
@@ -99,8 +100,7 @@ def split_brep_by_face(face, brep):
 def split_panels_by_box_faces(box_faces, panels, move_value = 0.5, scale_val = 2):
     """Takes all the panels and iterate for each wooden face if any can split the panel 
     and returns the new panel
-    """
-    
+    """  
     for face in box_faces:
         #adjust the cutting surface
         new_face = move_surface_and_scale(face,move_value, scale_val)
