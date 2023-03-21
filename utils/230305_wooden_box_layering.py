@@ -54,7 +54,7 @@ def bake_object(obj,lay,parent_layer_name, col = 25):
             index = sc.doc.Layers.Add(child_layer)
             attr.LayerIndex = index
 
-    print(obj)
+    #print(obj)
     if( sc.doc.Objects.AddBrep(obj, attr) != System.Guid.Empty ):
         rc = Rhino.Commands.Result.Success
         sc.doc.Views.Redraw()
@@ -74,7 +74,11 @@ def create_extruded_brep_from_face(face, brep_depth, flip = 1):
     return brep_needed_tampered
 
 
-def assign_box_names_to_box_faces(list_box_faces,box_centroid, parent_layer_name, brep_depth, add_depth = True,):
+def assign_box_names_to_box_faces(list_box_faces,box_centroid, parent_layer_name, brep_depth, add_depth = True):
+    """
+    is_box_sort_bug : bool added because there was a bug in box 31, the sort of faces was not executed properly, probably one of the urface was treated as untrimmed
+      and hence replaced the 5 bog areas of bog faces and ruined the sorting.
+    """
     breps = []
     layer_names = []
     parent_layer_names = []
@@ -89,6 +93,7 @@ def assign_box_names_to_box_faces(list_box_faces,box_centroid, parent_layer_name
     ref_vec.Unitize()
     #sort the faces based on area 
     list_box_faces.sort(key = lambda e :(e.ToBrep()).GetArea, reverse=True)
+    
     for index, face in enumerate(list_box_faces):
         flip = 1
         layer_name = ""
@@ -97,9 +102,8 @@ def assign_box_names_to_box_faces(list_box_faces,box_centroid, parent_layer_name
         face.SetDomain(1, rg.Interval(0,1))
         #get normal at midpoint
         norm_face = face.NormalAt(0.5,0.5)
-        pt = face.PointAt(0.5,0.5)
-        
-        if index < 5: #the big faces
+        pt = face.PointAt(0.5,0.5)       
+        if (index < 5 and parent_layer_name != "Box 31") or (parent_layer_name == "Box 31" and (abs(norm_face * rg.Vector3d.XAxis) == 1 or abs(norm_face * rg.Vector3d.YAxis) == 1 or abs(norm_face * rg.Vector3d.ZAxis) ==1)): #the big faces
             if abs(norm_face * ref_vec) > 0.95: #back
                 layer_name = 'BA'
                 if (norm_face * ref_vec) > 0: #an exception that happned in box 7 where it is flipped
@@ -109,6 +113,7 @@ def assign_box_names_to_box_faces(list_box_faces,box_centroid, parent_layer_name
             elif norm_face * rg.Vector3d.XAxis < -0.95: #left
                 layer_name = 'LF'
             elif norm_face * rg.Vector3d.ZAxis > 0.95: #top
+                print("5araaa")
                 layer_name = 'TO'
             else:
                 layer_name = 'BO'
@@ -132,7 +137,7 @@ def assign_box_names_to_box_faces(list_box_faces,box_centroid, parent_layer_name
         else:
             brep = face.ToBrep()  
 
-        print(brep)
+        #print(brep)
         breps.append(brep)
         layer_names.append(layer_name)
         parent_layer_names.append(parent_layer_name)
