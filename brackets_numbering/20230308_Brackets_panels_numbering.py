@@ -359,8 +359,19 @@ for brep0,id0 in zip(breps,ids):
         #print("layer 1 is {0}".format(layer1))
         if (brep0 is not brep1) and (("%s-%s"%(layer0,layer1) not in [int.layer for int in intersections])) and (("%s-%s"%(layer1,layer0) not in [int.layer for int in intersections])) and (layer1 not in B_TAGS or layer0 not in B_TAGS):
             #print ("%s-%s"%(layer0,layer1)),"%s-%s"%(layer1,layer0), [int.layer for int in intersections]
-            actual_inter_tol = inter_tol_breps 
+            if(((layer0 == "03" and layer1 == "04") or (layer0 == "04" and layer1 == "03") and (box_number == 5))
+               or ((layer0 == "01" and layer1 == "04") or (layer0 == "04" and layer1 == "01") and (box_number == 5))):
+                print("we CHANGED TOL")
+                actual_inter_tol = 1.0
+            elif((layer0 == "06" and layer1 == "10") or (layer0 == "10" and layer1 == "06") and (box_number == 5)):
+                actual_inter_tol = 1.5
+           
+            else:
+                actual_inter_tol = inter_tol_breps 
             if layer1 in B_TAGS or layer0 in B_TAGS:
+                if((layer0 == "BO" and layer1 == "07") or (layer0 == "07" and layer1 == "BO") and (box_number == 18)):
+                    actual_inter_tol += 0.6
+            else:
                 actual_inter_tol += add_B_tol
             bbx = rg.Intersect.Intersection.BrepBrep(brep0,brep1,actual_inter_tol)
             if bbx and len(bbx[1])>0:
@@ -452,6 +463,14 @@ for inter in intersections:
                         max_area_threshold_applied = 240
                         p_count_max_applied = 13
                         min_area_threshold_applied = 110
+                    
+                    elif(inter.layer == "BO-07" or inter.layer == "07-BO" and box_number == 18): 
+                        #print("kharaaaaaaaaaaaaaaaaaa")                        
+                        max_area_threshold_applied = 240
+                        p_count_max_applied = 13
+                        min_area_threshold_applied = 120
+
+
                     else:
                         max_area_threshold_applied = max_area_threshold
                         p_count_max_applied = pcount_max
@@ -514,14 +533,17 @@ for inter in intersections:
                             big_edge = edge_curves[8]
                             small_edge, big_edge, p0, p1, pp0, pp1 = select_small_edge_and_adjust_both_edges_exceptions(small_edge, big_edge, 100)
                       
-                        # elif(inter.layer == "BA-01" or inter.layer == "01-BA" and box_number == 7):
-                        #     print("we are here")
-                            #pass
-                            # if cut.GetArea() > 125 or cut.GetArea() < 110:
-                            #     continue
-                            # small_edge = edge_curves[2]
-                            # big_edge = edge_curves[5]
-                            # small_edge, big_edge, p0, p1, pp0, pp1 = select_small_edge_and_adjust_both_edges_exceptions(small_edge, big_edge, 100)
+                        
+                        
+                        elif(inter.layer == "BO-07" or inter.layer == "07-BO" and box_number == 18):
+                            print("we are kharuyanaaa")
+                            curve = rg.Curve.JoinCurves([edge_curves[3],edge_curves[4]])[0]
+                            small_edge = curve
+                            big_edge = edge_curves[7]
+                            small_edge, big_edge, p0, p1, pp0, pp1 = select_small_edge_and_adjust_both_edges_exceptions(small_edge, big_edge, 100)
+                        
+
+                        
                         else:
                             big_edges.append(big_edge)
                             print(inter.layer)
