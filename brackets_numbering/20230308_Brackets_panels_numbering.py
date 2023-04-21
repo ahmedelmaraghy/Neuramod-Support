@@ -359,21 +359,30 @@ for brep0,id0 in zip(breps,ids):
         #print("layer 1 is {0}".format(layer1))
         if (brep0 is not brep1) and (("%s-%s"%(layer0,layer1) not in [int.layer for int in intersections])) and (("%s-%s"%(layer1,layer0) not in [int.layer for int in intersections])) and (layer1 not in B_TAGS or layer0 not in B_TAGS):
             #print ("%s-%s"%(layer0,layer1)),"%s-%s"%(layer1,layer0), [int.layer for int in intersections]
-            if(((layer0 == "03" and layer1 == "04") or (layer0 == "04" and layer1 == "03") and (box_number == 5))
-               or ((layer0 == "01" and layer1 == "04") or (layer0 == "04" and layer1 == "01") and (box_number == 5))):
+            if((((layer0 == "03" and layer1 == "04") or (layer0 == "04" and layer1 == "03")) and (box_number == 5))
+               or (((layer0 == "01" and layer1 == "04") or (layer0 == "04" and layer1 == "01")) and (box_number == 5))):
                 print("we CHANGED TOL")
                 actual_inter_tol = 1.0
-            elif((layer0 == "06" and layer1 == "10") or (layer0 == "10" and layer1 == "06") and (box_number == 5)):
+            elif(((layer0 == "06" and layer1 == "10") or (layer0 == "10" and layer1 == "06")) and (box_number == 5)):
                 actual_inter_tol = 1.5
-           
+            elif(((layer0 == "09" and layer1 == "11") or (layer0 == "11" and layer1 == "09")) and (box_number == 11)):
+                actual_inter_tol = 0.95
+            elif(((layer0 == "08" and layer1 == "07") or (layer0 == "07" and layer1 == "08")) and (box_number == 11)):
+                actual_inter_tol = 1.1
+
             else:
                 actual_inter_tol = inter_tol_breps 
             if layer1 in B_TAGS or layer0 in B_TAGS:
-                if((layer0 == "BO" and layer1 == "07") or (layer0 == "07" and layer1 == "BO") and (box_number == 18)):
+                if(((layer0 == "BO" and layer1 == "07") or (layer0 == "07" and layer1 == "BO")) and (box_number == 18)):
                     actual_inter_tol += 0.6
-            else:
-                actual_inter_tol += add_B_tol
+                elif(((layer0 == "TO" and layer1 == "09") or (layer0 == "09" and layer1 == "TO")) and (box_number == 0)):
+                    actual_inter_tol += 1.3
+                elif(((layer0 == "TO" and layer1 == "05") or (layer0 == "05" and layer1 == "TO")) and (box_number == 0)):
+                    actual_inter_tol += 0.6
+                else:
+                    actual_inter_tol += add_B_tol
             bbx = rg.Intersect.Intersection.BrepBrep(brep0,brep1,actual_inter_tol)
+            print(actual_inter_tol)
             if bbx and len(bbx[1])>0:
                 list_intersections = []
                 for bx in bbx[1]:
@@ -440,7 +449,7 @@ for inter in intersections:
                 #iterate over each surface cut
                 i = 0
                 for cut in cuts:
-                    #circles.append(cut)
+                    circles.append(cut)
                     print(inter.layer)
                     count = 0
                     pcount = 0
@@ -451,24 +460,50 @@ for inter in intersections:
                         if edge.Degree == 1:
                             pcount += 1
                     print(count)
-                    if(inter.layer == "11-IL" or inter.layer == "IL-11" and box_number == 7):
+                    if((inter.layer == "11-IL" or inter.layer == "IL-11") and box_number == 7):
                         max_area_threshold_applied = 240
                         p_count_max_applied = 10
                         min_area_threshold_applied = 70
-                    elif(inter.layer == "11-IB" or inter.layer == "IB-11" and box_number == 7):                         
+                    elif((inter.layer == "11-IB" or inter.layer == "IB-11") and box_number == 7):                         
                         max_area_threshold_applied = 240
                         p_count_max_applied = 10
                         min_area_threshold_applied = 70
-                    elif(inter.layer == "07-IB" or inter.layer == "IB-07" and box_number == 3):                         
+                    elif((inter.layer == "07-IB" or inter.layer == "IB-07") and box_number == 3):                         
                         max_area_threshold_applied = 240
                         p_count_max_applied = 13
                         min_area_threshold_applied = 110
                     
-                    elif(inter.layer == "BO-07" or inter.layer == "07-BO" and box_number == 18): 
+                    elif((inter.layer == "BO-07" or inter.layer == "07-BO") and box_number == 18): 
                         #print("kharaaaaaaaaaaaaaaaaaa")                        
                         max_area_threshold_applied = 240
                         p_count_max_applied = 13
                         min_area_threshold_applied = 120
+
+                    elif((inter.layer == "IB-11" or inter.layer == "11-IB") and box_number == 0): 
+                        #print("kharaaaaaaaaaaaaaaaaaa")                        
+                        max_area_threshold_applied = 240
+                        p_count_max_applied = 13
+                        min_area_threshold_applied = 209
+
+
+                    elif((inter.layer == "IB-07" or inter.layer == "07-IB") and box_number == 18): 
+                        print("kharaaaaaaaaaaaaaaaaaa")                        
+                        max_area_threshold_applied = 1
+                        p_count_max_applied = 1
+                        min_area_threshold_applied = 0.5
+
+
+                    elif((inter.layer == "IR-11" or inter.layer == "11-IR") and box_number == 18): 
+                        #print("kharaaaaaaaaaaaaaaaaaa")                        
+                        max_area_threshold_applied = 220
+                        p_count_max_applied = 13
+                        min_area_threshold_applied = 218
+
+
+
+                  
+
+
 
 
                     else:
@@ -476,7 +511,7 @@ for inter in intersections:
                         p_count_max_applied = pcount_max
                         min_area_threshold_applied =  threshold
 
-                    #print("count is {0}, cut area is {1} and pcount is {2} and max threshold is {3}".format(count, cut.GetArea(), pcount,max_area_threshold_applied ))
+                    print("count is {0}, cut area is {1} and pcount is {2} and max threshold is {3}".format(count, cut.GetArea(), pcount,max_area_threshold_applied ))
                     if (count > 4 and cut.GetArea() > min_area_threshold_applied and cut.GetArea() < max_area_threshold_applied and pcount > 4 and pcount < p_count_max_applied) : #pcount < 7 was added to account for any irregularites 
                         #of brackets that may cause problems!!                        
                         edge_curves = [edge.EdgeCurve for edge in cut.Edges if edge.Degree == 1]
@@ -506,43 +541,56 @@ for inter in intersections:
                                 if line.Length > 5.9 and line.Length < 6.1:
                                     edge_curves = [curve]
                             small_edge, big_edge, p0, p1, pp0, pp1 = select_small_edge_and_adjust_both_edges_exceptions(edge_curves[0], big_edge, 100)
-                        elif(inter.layer == "IB-07" or inter.layer == "07-IB" and box_number == 3):
+                        
+                        elif((inter.layer == "IB-07" or inter.layer == "07-IB") and box_number == 3):
                             if cut.GetArea() < 190:
                                 continue
                             small_edge = edge_curves[3]
                             big_edge = edge_curves[-1]
                             small_edge, big_edge, p0, p1, pp0, pp1 = select_small_edge_and_adjust_both_edges_exceptions(small_edge, big_edge, 100)
-                        elif(inter.layer == "10-IL" or inter.layer == "IL-10" and box_number == 3):
+                        
+                        elif((inter.layer == "10-IL" or inter.layer == "IL-10") and box_number == 3):
                             small_edge = edge_curves[4]
                             #big_edge = edge_curves[8]
                             small_edge, big_edge, p0, p1, pp0, pp1 = select_small_edge_and_adjust_both_edges_exceptions(small_edge, big_edge, 100)
-                        elif(inter.layer == "BA-02" or inter.layer == "02-BA" and box_number == 26):
+                        
+                        elif((inter.layer == "BA-02" or inter.layer == "02-BA") and box_number == 26):
                             if cut.GetArea() > 125 or cut.GetArea() < 110:
                                 continue
                             small_edge = edge_curves[2]
                             big_edge = edge_curves[5]
                             small_edge, big_edge, p0, p1, pp0, pp1 = select_small_edge_and_adjust_both_edges_exceptions(small_edge, big_edge, 100)
-                        elif(inter.layer == "05-IL" or inter.layer == "IL-05" and box_number == 7):
+                        
+                        elif((inter.layer == "05-IL" or inter.layer == "IL-05") and box_number == 7):
                             continue
-                        elif(inter.layer == "11-IB" or inter.layer == "IB-11" and box_number == 7):
+                        
+                        elif((inter.layer == "11-IB" or inter.layer == "IB-11") and box_number == 7):
                             small_edge = edge_curves[3]
                             big_edge = edge_curves[7]
                             small_edge, big_edge, p0, p1, pp0, pp1 = select_small_edge_and_adjust_both_edges_exceptions(small_edge, big_edge, 100)
-                        elif(inter.layer == "11-IL" or inter.layer == "IL-11" and box_number == 7):
+                        
+                        elif((inter.layer == "11-IL" or inter.layer == "IL-11") and box_number == 7):
                             small_edge = edge_curves[4]
                             big_edge = edge_curves[8]
-                            small_edge, big_edge, p0, p1, pp0, pp1 = select_small_edge_and_adjust_both_edges_exceptions(small_edge, big_edge, 100)
-                      
+                            small_edge, big_edge, p0, p1, pp0, pp1 = select_small_edge_and_adjust_both_edges_exceptions(small_edge, big_edge, 100)                     
                         
-                        
-                        elif(inter.layer == "BO-07" or inter.layer == "07-BO" and box_number == 18):
-                            print("we are kharuyanaaa")
+                        elif((inter.layer == "BO-07" or inter.layer == "07-BO") and box_number == 18):
+                            #print("we are kharuyanaaa")
                             curve = rg.Curve.JoinCurves([edge_curves[3],edge_curves[4]])[0]
                             small_edge = curve
                             big_edge = edge_curves[7]
                             small_edge, big_edge, p0, p1, pp0, pp1 = select_small_edge_and_adjust_both_edges_exceptions(small_edge, big_edge, 100)
                         
+                        elif((inter.layer == "IB-11" or inter.layer == "11-IB") and box_number == 0): 
+                            small_edge = edge_curves[3]
+                            big_edge = edge_curves[7]
+                            small_edge, big_edge, p0, p1, pp0, pp1 = select_small_edge_and_adjust_both_edges_exceptions(small_edge, big_edge, 100)
+                        
 
+                        elif((inter.layer == "IR-11" or inter.layer == "11-IR") and box_number == 18): 
+                            small_edge = edge_curves[3]
+                            big_edge = edge_curves[7]
+                            small_edge, big_edge, p0, p1, pp0, pp1 = select_small_edge_and_adjust_both_edges_exceptions(small_edge, big_edge, 100)
                         
                         else:
                             big_edges.append(big_edge)
