@@ -11,7 +11,7 @@ import Rhino
 from System import Array
 from ghpythonlib.components import FilletEdge
 import random as r
-import math
+import copy 
 
 from Rhino.Geometry import * #for text
 
@@ -392,13 +392,14 @@ class Intersection(object):
         small_edge, big_edge, p0, p1, pp0, pp1 = select_small_edge_and_adjust_both_edges_exceptions(other_edge, right_edge, edge_extention)
         return small_edge, big_edge, p0, p1, pp0, pp1, depth_vector
 
-    def create_screws_holes(self, bracket, depth_vector, dist_screw = 6, dist_head = 3, tolerance = 0.1, rad_screw = 3, rad_head = 5):
+    def create_screws_holes(self, bracket, depth_vector, dist_screw = 6, dist_head = 3, tolerance = 0.1, rad_screw = 3, rad_head = 6):
         """
         creates the two body for the screw and the screw head 
         """  
         #sort faces and get the midpoint of the face that is in line iwht the decpth vector 
         brep_faces = bracket.Faces
         face_req = bracket.Faces[0]
+        area = float('-inf')
         for face in brep_faces:
             face.SetDomain(0, rg.Interval(0,1))
             face.SetDomain(1, rg.Interval(0,1))
@@ -406,7 +407,11 @@ class Intersection(object):
             vector = face.NormalAt(0.5,0.5)
             dot_product = vector * depth_vector
             if dot_product < -0.99 : #opposite in direction of the depth_vector
-                face_req = face
+                new_area = face.ToBrep().GetArea()
+                if new_area > area:
+                    face_req = face
+                    area = new_area
+                
         
 
         st_pt = face_req.PointAt(0.5,0.5)
@@ -414,7 +419,7 @@ class Intersection(object):
         st_pt_tol = st_pt + depth_vector * -tolerance #in opposite direction
         #create base plane
         base_screw_plane = rg.Plane(st_pt_tol, depth_vector)
-        cylinder1 = rg.Cylinder(rg.Circle(base_screw_plane,rad_screw), dist_screw)
+        cylinder1 = rg.Cylinder(rg.Circle(base_screw_plane,rad_screw), dist_screw + tolerance)
 
         #create the screw head
         #move the starting point a bit in case of boolean problems
@@ -424,9 +429,14 @@ class Intersection(object):
         cylinder2 = rg.Cylinder(rg.Circle(head_screw_plane,rad_head ), dist_head + tolerance)
 
         #create screw:
-        screw = rg.Brep.CreateBooleanUnion([cylinder1.ToBrep(True, True), cylinder2.ToBrep(True, True)], 0.001) 
-        self.screws.append(screw)
-        return screw
+        screw = rg.Brep.CreateBooleanUnion([cylinder1.ToBrep(True, True), cylinder2.ToBrep(True, True)], 0.001)
+        if screw.Count > 1:  
+            screw_final = rg.Brep.JoinBreps(screw, 0.001)
+            print("we are here !!!!")
+            screw = screw_final
+        print(screw)
+        #self.screws.append(screw)
+        return screw[0], face_req
       
 
 
@@ -521,6 +531,8 @@ for inter in intersections:
         ts =  crv.DivideByCount(2,True)
         #print("domain is {0} and {1}".format(ts[1], ts[2]))
         point,end = crv.PointAt(ts[1]),crv.PointAt(ts[2])
+        if box_number == 04 or box_number == 10: #excception !!!!!!
+            distance = 80.0
         if crv.GetLength() > distance*3:
             d_count = crv.GetLength()//distance
             params = crv.DivideByCount(d_count,True)
@@ -571,7 +583,7 @@ for inter in intersections:
                         min_area_threshold_applied = 110
                     
                     elif((inter.layer == "BO-07" or inter.layer == "07-BO") and box_number == 18): 
-                        #print("kharaaaaaaaaaaaaaaaaaa")                        
+                        print("kharaaaaaaaaaaaaaaaaaa")                        
                         max_area_threshold_applied = 240
                         p_count_max_applied = 13
                         min_area_threshold_applied = 120
@@ -593,6 +605,7 @@ for inter in intersections:
                         max_area_threshold_applied = 220
                         p_count_max_applied = 13
                         min_area_threshold_applied = 218
+                    
 
                     else:
                         max_area_threshold_applied = max_area_threshold
@@ -661,10 +674,11 @@ for inter in intersections:
                             small_edge, big_edge, p0, p1, pp0, pp1 = select_small_edge_and_adjust_both_edges_exceptions(small_edge, big_edge, 100)                     
                         
                         elif((inter.layer == "BO-07" or inter.layer == "07-BO") and box_number == 18):
-                            #print("we are kharuyanaaa")
+                            print("we are kharuyanaaa")
                             curve = rg.Curve.JoinCurves([edge_curves[3],edge_curves[4]])[0]
                             small_edge = curve
                             big_edge = edge_curves[7]
+                            #big_edge = edge_curves[7]
                             small_edge, big_edge, p0, p1, pp0, pp1 = select_small_edge_and_adjust_both_edges_exceptions(small_edge, big_edge, 100)
                         
                         elif((inter.layer == "IB-11" or inter.layer == "11-IB") and box_number == 0): 
@@ -763,8 +777,11 @@ for inter in intersections:
                             bbe = rg.Brep.CreateFilletEdges(bool,indices,[2.0 for _ in range(len(indices))],[2.0 for _ in range(len(indices))],rg.BlendType.Fillet,rg.RailType.RollingBall,0.0001)
 
                             #new part to accomodate the screws in the top box panels 
-                            if box_type == 1 and ("TO" in inter.layer or "TO" in inter.layer):
-                                circs.append(inter.create_screws_holes(bbe[0], depth_vector))
+                            if box_type == 1 and ("TO" in inter.layer or "IT" in inter.layer):
+                                screw, face = inter.create_screws_holes(bbe[0], depth_vector)
+                                sm_edges.append(face)
+                                inter.screws.append(screw)
+                                
 
                         #add the real bracket to the intersection variable brackets
                         if "00" in inter.layer  and "TO" in inter.layer and i == 0:
@@ -810,8 +827,10 @@ tag_txt_by_layer = []
 tag_txt_layers = []
 tag_txt = []
 all_brackets = []
+all_screws = []
 for inter in intersections:
     all_brackets.append(inter.brackets)
+    all_screws.append(inter.screws)
     for index, planes_pair in enumerate(inter.text_planes): 
 
         pt0 =inter.breps[0].ClosestPoint(planes_pair[0].Origin)
