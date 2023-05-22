@@ -320,6 +320,7 @@ class Intersection(object):
         self.text_planes = []
         self.tags = []
         self.brackets = []
+        self.fab_brackets = []
         self.label1 = TextEntity()
         self.label2 = TextEntity()
 
@@ -362,6 +363,19 @@ class Intersection(object):
         vector = req_face.NormalAt(0.5,0.5)
         self.box_normal = vector
 
+    def adjust_small_big_edge_for_fab_tolerance(self, p0, p1, pp0, pp1, bracket_tol = 0.15):
+        #Untize and check conformity with small edge 
+        vec_small = p1 - p0
+        vec_big = pp1 - pp0
+        vec_small.Unitize()
+        vec_big.Unitize()
+        p1_t = p1 - vec_small *  bracket_tol 
+        pp1_t = pp1 - vec_big *  bracket_tol 
+
+        small_edge_tol  = rg.Line(p0, p1_t)
+        big_edge_tol = rg.Line(pp0, pp1_t)
+        return small_edge_tol.ToNurbsCurve(), big_edge_tol.ToNurbsCurve(), p0, p1_t, pp0, pp1_t
+
     def adjustment_box_bracket(self, small_edge, big_edge, p0, p1, pp0, pp1, moving_distance = 3.2, edge_extention = 30):
         #Untize and check conformity with small edge 
         right_edge = big_edge
@@ -391,6 +405,8 @@ class Intersection(object):
         right_edge.Translate(depth_vector * moving_distance)
         small_edge, big_edge, p0, p1, pp0, pp1 = select_small_edge_and_adjust_both_edges_exceptions(other_edge, right_edge, edge_extention)
         return small_edge, big_edge, p0, p1, pp0, pp1, depth_vector
+
+
 
     def create_screws_holes(self, bracket, depth_vector, dist_screw = 6, dist_head = 3, tolerance = 0.1, rad_screw = 3, rad_head = 6):
         """
@@ -440,7 +456,7 @@ class Intersection(object):
       
 
 
-FAB_TOL = 0.15
+#FAB_TOL = 0.15
 
 B_TAGS = ('TO','BO','LF','RI','BA','IT','IB','IL','IR')
 
@@ -515,7 +531,7 @@ for brep0,id0 in zip(breps,ids):
                 intersections.append(interX)
 
 
-circs,tags = [],[]
+circs,circs_tol, tags = [],[], []
 max_area_threshold_applied = max_area_threshold
 min_area_threshold_applied = threshold
 p_count_max_applied = pcount_max
@@ -737,49 +753,73 @@ for inter in intersections:
                         big_edge, pp0, pp1 = final_adjustment_big_edge(small_edge, big_edge, 200)
                         if box_type == 1: #meaning one of the breps is wooden box side
                             small_edge, big_edge, p0, p1, pp0, pp1, depth_vector =  inter.adjustment_box_bracket(small_edge, big_edge, p0, p1, pp0, pp1)
+                        print("sm edge typeis {0}".format(type(small_edge)))
+                        small_edge_tol, big_edge_tol, p0, p1_t, pp0, pp1_t = inter.adjust_small_big_edge_for_fab_tolerance(p0, p1, pp0, pp1, FAB_TOL)
                         
-                        sm_edges.append(small_edge)
-                        big_edges.append(big_edge)
                         p0s.append(pp0)
                         p1s.append(pp1)
                         if small_edge and big_edge is not None:
                             fil = rg.Curve.CreateFilletCurves(small_edge,p0,big_edge,pp0,0,True,True,True,True,0.01)
+                            fil_tol = rg.Curve.CreateFilletCurves(small_edge_tol,p0,big_edge_tol,pp0,0,True,True,True,True,0.01)
                             #p1s.append(fil[0])
                             
 #                            rg.PolyCurve.SegmentCurve
                             if fil[0].SegmentCount<2 or min([fil[0].SegmentCurve(i).GetLength() for i in range(fil[0].SegmentCount)])<20:
                                 #print ('fli')
                                 fil = rg.Curve.CreateFilletCurves(small_edge,p0,big_edge, pp1,0,True,True,True,True,0.01)
+                                fil_tol = rg.Curve.CreateFilletCurves(small_edge_tol,p0,big_edge_tol, pp1_t,0,True,True,True,True,0.01)
                             fil = fil[0] if len(fil)==1 else None
+                            fil_tol = fil_tol[0] if len(fil_tol)==1 else None
                             
                             off = fil.Offset(rg.Point3d((fil.PointAtEnd+fil.PointAtStart)/2),rg.Plane(fil.PointAtEnd,fil.PointAtStart,fil.PointAt(0.5)).ZAxis,3.2,0.01,0.01,False,rg.CurveOffsetCornerStyle.Sharp,rg.CurveOffsetEndStyle.Flat)
+                            off_tol = fil_tol.Offset(rg.Point3d((fil_tol.PointAtEnd+fil_tol.PointAtStart)/2),rg.Plane(fil_tol.PointAtEnd,fil_tol.PointAtStart,fil_tol.PointAt(0.5)).ZAxis,3.2,0.01,0.01,False,rg.CurveOffsetCornerStyle.Sharp,rg.CurveOffsetEndStyle.Flat)
+                            #sm_edges.append(off[0])
                             
-                            if not box_type: b1,b2 = rg.Extrusion.Create(off[0].ToNurbsCurve(),9.0 + FAB_TOL, True),rg.Extrusion.Create(off[0].ToNurbsCurve(),-9.0 - FAB_TOL,True)
-                            else : b1,b2 = rg.Extrusion.Create(off[0].ToNurbsCurve(),15.0 + FAB_TOL, True),rg.Extrusion.Create(off[0].ToNurbsCurve(),-15.0 - FAB_TOL,True)
+                            if not box_type: 
+                                b1,b2 = rg.Extrusion.Create(off[0].ToNurbsCurve(),9.0 + FAB_TOL, True),rg.Extrusion.Create(off[0].ToNurbsCurve(),-9.0 - FAB_TOL,True)
+                                b1_t,b2_t = rg.Extrusion.Create(off_tol[0].ToNurbsCurve(),9.0, True),rg.Extrusion.Create(off_tol[0].ToNurbsCurve(),-9.0,True)
+                            else: 
+                                b1,b2 = rg.Extrusion.Create(off[0].ToNurbsCurve(),15.0 + FAB_TOL, True),rg.Extrusion.Create(off[0].ToNurbsCurve(),-15.0 - FAB_TOL,True)
+                                b1_t,b2_t = rg.Extrusion.Create(off_tol[0].ToNurbsCurve(),15.0, True),rg.Extrusion.Create(off_tol[0].ToNurbsCurve(),-15.0,True)
+                            sm_edges.append(b1_t)
+                            big_edges.append(b1)
                             if b1 and b2 is not None:
                                 x1 = b1.ToBrep()
                                 x2 = b2.ToBrep()
+                                x1_t = b1_t.ToBrep()
+                                x2_t = b2_t.ToBrep()
                                 bool = rg.Brep.CreateBooleanUnion([x1,x2],0.001)
+                                bool_t = rg.Brep.CreateBooleanUnion([x1_t,x2_t],0.001)
                                 if len(bool)==1:
                                     bool[0].MergeCoplanarFaces(0.00,0.001)
+                                    bool_t[0].MergeCoplanarFaces(0.00,0.001)
                                     bool = bool[0]
+                                    bool_t = bool_t[0]
                                 else:
                                     print ('Boolean not created, check breps')
                             else:
                                 print ('Bad Offset Curve, Extrusion not created.')
                             fillet_indices = []
+                            fillet_indices_tol = []
                             #sm_edges.append(fil)
                             for edge in bool.Edges:
                                 if abs(edge.EdgeCurve.GetLength() - 3.2) < 0.5:
                                     num =  edge.EdgeIndex
                                     fillet_indices.append(num)
+                            for edge_t in bool_t.Edges:
+                                if abs(edge_t.EdgeCurve.GetLength() - 3.2) < 0.5:
+                                    num =  edge_t.EdgeIndex
+                                    fillet_indices_tol.append(num)
                             indices = fillet_indices
+                            indices_tol = fillet_indices_tol
                             bbe = rg.Brep.CreateFilletEdges(bool,indices,[2.0 for _ in range(len(indices))],[2.0 for _ in range(len(indices))],rg.BlendType.Fillet,rg.RailType.RollingBall,0.0001)
+                            bbe_tol = rg.Brep.CreateFilletEdges(bool_t,indices_tol,[2.0 for _ in range(len(indices_tol))],[2.0 for _ in range(len(indices_tol))],rg.BlendType.Fillet,rg.RailType.RollingBall,0.0001)
+                           
 
                             #new part to accomodate the screws in the top box panels 
                             if box_type == 1 and ("TO" in inter.layer or "IT" in inter.layer):
                                 screw, face = inter.create_screws_holes(bbe[0], depth_vector)
-                                sm_edges.append(face)
+                                #sm_edges.append(face)
                                 inter.screws.append(screw)
                                 
 
@@ -790,10 +830,15 @@ for inter in intersections:
                             print('i is : {0}'.format(i)) 
                         else:
                             bbe = bbe[0]
+                            bbe_tol = bbe_tol[0]
                             #circs.append([small_edge,big_edge,cut])
                             circs.append(bbe)
+                            circs_tol.append(bbe_tol)
                             inter.text_planes.append(planes_pair)
                             inter.brackets.append(bbe)
+                            
+                            inter.fab_brackets.append(bbe_tol)
+                            
                             tags.append(inter.layer)
 
                             box_tag = ""
@@ -827,9 +872,11 @@ tag_txt_by_layer = []
 tag_txt_layers = []
 tag_txt = []
 all_brackets = []
+all_fab_brackets = []
 all_screws = []
 for inter in intersections:
     all_brackets.append(inter.brackets)
+    all_fab_brackets.append(inter.fab_brackets)
     all_screws.append(inter.screws)
     for index, planes_pair in enumerate(inter.text_planes): 
 
@@ -863,5 +910,6 @@ if bake_panels:
 
 intersections = intersections
 circs = tree(circs)
+circs_tol = tree(circs_tol)
 
 
