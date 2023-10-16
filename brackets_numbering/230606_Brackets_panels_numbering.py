@@ -50,11 +50,11 @@ def bake_object_v2(obj,lay,parent_layer_name, col = 25):
     # Get the name of the layer
     parent_layer =  sc.doc.Layers[parent_index]
     
-    sub_parent_index = sc.doc.Layers.Find("{0}_panels_fabri_ready".format(parent_layer_name), True)
+    sub_parent_index = sc.doc.Layers.Find("{0}_panels_fabri_ready_v2".format(parent_layer_name), True)
     if sub_parent_index < 0:
         sub_parent_layer = rd.Layer()
         sub_parent_layer.ParentLayerId = parent_layer.Id
-        sub_parent_layer.Name = "{0}_panels_fabri_ready".format(parent_layer_name)
+        sub_parent_layer.Name = "{0}_panels_fabri_ready_v2".format(parent_layer_name)
         sub_parent_index = sc.doc.Layers.Add(sub_parent_layer)
 
 
@@ -276,6 +276,35 @@ def add_planes_for_text(p0, p1, pp0, pp1, move_text_distance1, move_text_distanc
     
     return [small_plane, big_plane], small_plane.Origin, big_plane.Origin
 
+def add_planes_for_textv2(p0, p1, pp0, pp1, offset, move_text_distance1, move_text_distance2):
+    """takes the points of the small and big line, creates planes for text insertion
+    and moves it above of the brackets by a variable distance as preferred
+    """
+    small_Y = p1 - p0
+    small_Y.Unitize()
+    big_Y = pp1 - pp0
+    big_Y.Unitize()
+
+    small_X = rg.Vector3d.CrossProduct(small_Y, big_Y)
+    big_X = rg.Vector3d.CrossProduct(big_Y, small_Y)
+
+    small_origin = p1 + small_Y * move_text_distance1
+    big_origin = pp1 + big_Y * move_text_distance2
+    #create planes for both tags
+    small_plane = rg.Plane(small_origin, small_X, small_Y)
+    small_plane.Translate(small_plane.Normal * offset)
+    big_plane = rg.Plane(big_origin, big_X, big_Y)
+    
+    return [small_plane, big_plane], small_plane.Origin, big_plane.Origin
+
+
+def divide_curve_manually(crv, params):
+    pts = []
+    for param in params:
+       pts.append(crv.PointAt(param))
+    return pts
+
+
   
 
 class Panel_Extrusions(object):
@@ -288,6 +317,7 @@ class Panel_Extrusions(object):
         """iterates over all panels and checks if they are in the list or not, if yes, 
         then perform 
         """
+        dibond_panels = []
         for inter in intersections:
         #iterate over all intersections checking if this layer id is in the panels list
         #if yes then remove the brackets and replace the item in the panel with the id index
@@ -301,8 +331,9 @@ class Panel_Extrusions(object):
                     new_brep = inter.remove_brackets_from_panel(self.panels[self.panels_ids.index(panel_id)])
                     #replace the new trimmed panel in place of the one before operation
                     self.panels[self.panels_ids.index(panel_id)] = new_brep
+                    dibond_panels.append(new_brep)
 
-                #return new_brep, bracket
+        return dibond_panels
     
 
 class Intersection(object):
@@ -321,8 +352,10 @@ class Intersection(object):
         self.box_normal = None #!! might be inverted !! so is not reliable 
         self.screws = []
         self.text_planes = []
+        self.text_planes_brkts = []
         self.tags = []
         self.brackets = []
+        self.br_type = []
         self.fab_brackets = []
         self.label1 = TextEntity()
         self.label2 = TextEntity()
@@ -368,14 +401,14 @@ class Intersection(object):
         vector = req_face.NormalAt(0.5,0.5)
         self.box_normal = vector
 
-    def adjust_small_big_edge_for_fab_tolerance(self, p0, p1, pp0, pp1, bracket_tol = 0.15):
+    def adjust_small_big_edge_for_fab_tolerance(self, small_edge, big_edge, p0, p1, pp0, pp1, bracket_tol = 0.15):
         #Untize and check conformity with small edge 
         vec_small = p1 - p0
         vec_big = pp1 - pp0
         vec_small.Unitize()
         vec_big.Unitize()
-        p1_t = p1 - vec_small *  bracket_tol 
-        pp1_t = pp1 - vec_big *  bracket_tol 
+        p1_t = small_edge.PointAtEnd - vec_small *  bracket_tol 
+        pp1_t = big_edge.PointAtEnd - vec_big *  bracket_tol 
 
         small_edge_tol  = rg.Line(p0, p1_t)
         big_edge_tol = rg.Line(pp0, pp1_t)
@@ -432,6 +465,7 @@ class Intersection(object):
                 if new_area > area:
                     face_req = face
                     area = new_area
+                    center_pt = face.PointAt(0.5,0.5)
                 
         
 
@@ -457,7 +491,7 @@ class Intersection(object):
             screw = screw_final
         print(screw)
         #self.screws.append(screw)
-        return screw[0], face_req
+        return screw[0], face_req, center_pt
 
     def create_hexholder(self, bracket, depth_vector, dist_cyl = 4.1, tolerance = 0.1, rad_cyl = 5.5, rad_hex = 4.1, edges = 6):
             """
@@ -524,8 +558,14 @@ sm_edges = []
 big_edges = []
 p0s = []
 p1s = []
+pp0s = []
+pp1s = []
 planes_ = []
 edges_3 = []
+top_box_brackets = []
+screw_cntr_pts = []
+debug_panels = []
+bracket_lines_tol = []
 
 #get the intersection curves (line likes) between each brep and the ther other 
 for brep0,id0 in zip(breps,ids):
@@ -546,16 +586,42 @@ for brep0,id0 in zip(breps,ids):
                 actual_inter_tol = 0.95
             elif(((layer0 == "08" and layer1 == "07") or (layer0 == "07" and layer1 == "08")) and (box_number == 11)):
                 actual_inter_tol = 1.1
+            elif(((layer0 == "09" and layer1 == "04") or (layer0 == "04" and layer1 == "09")) and (box_number == 31)):
+                actual_inter_tol = 1.1
+            elif(((layer0 == "09" and layer1 == "11") or (layer0 == "11" and layer1 == "09")) and (box_number == 5)):
+                actual_inter_tol = 1.1
+            elif(((layer0 == "09" and layer1 == "00") or (layer0 == "00" and layer1 == "09")) and (box_number == 4)):
+                actual_inter_tol = 1.1
+            elif(((layer0 == "09" and layer1 == "06") or (layer0 == "06" and layer1 == "09")) and (box_number == 1)):
+                actual_inter_tol = 1.5
+            elif(((layer0 == "00" and layer1 == "02") or (layer0 == "02" and layer1 == "00")) and (box_number == 1)):
+                actual_inter_tol = 1.5
+            elif(((layer0 == "00" and layer1 == "03") or (layer0 == "03" and layer1 == "00")) and (box_number == 11)):
+                actual_inter_tol = 1.5
+            elif(((layer0 == "07" and layer1 == "01") or (layer0 == "01" and layer1 == "07")) and (box_number == 10)):
+                actual_inter_tol = 1.5
+            elif(((layer0 == "04" and layer1 == "01") or (layer0 == "01" and layer1 == "04")) and (box_number == 17)):
+                actual_inter_tol = 1.5
+            elif(((layer0 == "07" and layer1 == "11") or (layer0 == "11" and layer1 == "07")) and (box_number == 26)):
+                actual_inter_tol = 1.5
+           
 
             else:
                 actual_inter_tol = inter_tol_breps 
             if layer1 in B_TAGS or layer0 in B_TAGS:
                 if(((layer0 == "BO" and layer1 == "07") or (layer0 == "07" and layer1 == "BO")) and (box_number == 18)):
-                    actual_inter_tol += 0.6
+                    actual_inter_tol += 0.25
                 elif(((layer0 == "TO" and layer1 == "09") or (layer0 == "09" and layer1 == "TO")) and (box_number == 0)):
                     actual_inter_tol += 1.3
                 elif(((layer0 == "TO" and layer1 == "05") or (layer0 == "05" and layer1 == "TO")) and (box_number == 0)):
                     actual_inter_tol += 0.6
+                elif(((layer0 == "TO" and layer1 == "02") or (layer0 == "02" and layer1 == "TO")) and (box_number == 17)):
+                    actual_inter_tol += 0.9
+                elif(((layer0 == "IR" and layer1 == "11") or (layer0 == "11" and layer1 == "IR")) and (box_number == 3)):
+                    actual_inter_tol += 0.9
+                elif(((layer0 == "BO" and layer1 == "01") or (layer0 == "01" and layer1 == "BO")) and (box_number == 18)):
+                    actual_inter_tol += 0.9
+
                 else:
                     actual_inter_tol += add_B_tol
             bbx = rg.Intersect.Intersection.BrepBrep(brep0,brep1,actual_inter_tol)
@@ -591,12 +657,15 @@ circs,circs_tol, tags = [],[], []
 max_area_threshold_applied = max_area_threshold
 min_area_threshold_applied = threshold
 p_count_max_applied = pcount_max
-
+#this is a bool targeted for tailor made brackets that cant be divided equally but rather using custom legnths
+list_is_provided = False
 for inter in intersections:
+    print("kharaaa")
     #this function determines the which of the 2 breps is the box_panel and then determines a "guidance" normal vector that might be inverted and not reliable to used as proper normal
     inter.determining_box_brep(B_TAGS)
     bracket_index = 0
     for crv in inter.crvs:
+        print("number of curves is {0}".format(inter.crvs))
         #checks if curve is long enough to put more than 1 bracket or can only fit no more than 1 bracket only
         #new!! setting domain to be in between 0 and 1
         crv.Domain = rg.Interval(0,1)
@@ -605,7 +674,113 @@ for inter in intersections:
         point,end = crv.PointAt(ts[1]),crv.PointAt(ts[2])
         if box_number == 04 or box_number == 10: #excception !!!!!!
             distance = 80.0
-        if crv.GetLength() > distance*3:
+        if (inter.layer == "03-08" or inter.layer == "08-03") and box_number == 26:
+            pts = divide_curve_manually(crv, [0.7])
+        elif (inter.layer == "05-IT" or inter.layer == "IT-05") and box_number == 26:
+            pts = divide_curve_manually(crv, [0.65,0.85])
+        elif (inter.layer == "07-11" or inter.layer == "11-07") and box_number == 26:
+            pts = divide_curve_manually(crv, [0.3,0.7])
+        
+        elif (inter.layer == "IL-11" or inter.layer == "11-IL") and box_number == 31:
+            pts = divide_curve_manually(crv, [0.3,0.75])
+        elif (inter.layer == "09-04" or inter.layer == "04-09") and box_number == 31:
+            pts = divide_curve_manually(crv, [0.7])
+        elif (inter.layer == "IL-04" or inter.layer == "04-IL") and box_number == 31:
+            pts = divide_curve_manually(crv, [0.73])
+        elif (inter.layer == "IR-10" or inter.layer == "10-IR") and box_number == 31:
+            pts = divide_curve_manually(crv, [0.23, 0.70])
+        elif (inter.layer == "IT-02" or inter.layer == "02-IT") and box_number == 31:
+            pts = divide_curve_manually(crv, [0.15, 0.325 ,0.5, 0.8])
+        elif (inter.layer == "IL-09" or inter.layer == "09-IL") and box_number == 05:
+            pts = divide_curve_manually(crv, [0.25, 0.60, 0.85])
+        elif (inter.layer == "IR-10" or inter.layer == "10-IR") and box_number == 05:
+            pts = divide_curve_manually(crv, [0.125, 0.35])
+        elif (inter.layer == "06-10" or inter.layer == "10-06") and box_number == 05:
+            pts = divide_curve_manually(crv, [0.3])
+        elif (inter.layer == "03-04" or inter.layer == "04-03") and box_number == 05:
+            pts = divide_curve_manually(crv, [0.3, 0.8])
+        elif (inter.layer == "11-IL" or inter.layer == "IL-11") and box_number == 17:
+            pts = divide_curve_manually(crv, [0.3, 0.7, 0.9])
+        elif (inter.layer == "10-05" or inter.layer == "05-10") and box_number == 17:
+            pts = divide_curve_manually(crv, [0.5, 0.7, 0.9])
+        elif (inter.layer == "10-IT" or inter.layer == "IT-10") and box_number == 17:
+            pts = divide_curve_manually(crv, [0.2, 0.5, 0.85])
+        elif (inter.layer == "02-TO" or inter.layer == "TO-02") and box_number == 17:
+            pts = divide_curve_manually(crv, [0.2, 0.4,0.6, 0.8])
+        elif (inter.layer == "00-TO" or inter.layer == "TO-00") and box_number == 03:
+            pts = divide_curve_manually(crv, [0.21])
+        elif (inter.layer == "11-IR" or inter.layer == "IR-11") and box_number == 03:
+            pts = divide_curve_manually(crv, [0.25, 0.45, 0.8])
+        elif (inter.layer == "09-05" or inter.layer == "05-09") and box_number == 03:
+            pts = divide_curve_manually(crv, [0.7])
+        elif (inter.layer == "07-IB" or inter.layer == "IB-07") and box_number == 03:
+            pts = divide_curve_manually(crv, [0.14, 0.5, 0.85])
+        elif (inter.layer == "04-IB" or inter.layer == "IB-04") and box_number == 04:
+            pts = divide_curve_manually(crv, [0.8])
+        elif (inter.layer == "04-BO" or inter.layer == "BO-04") and box_number == 04:
+            pts = divide_curve_manually(crv, [0.7])
+        elif (inter.layer == "02-11" or inter.layer == "11-02") and box_number == 00:
+            pts = divide_curve_manually(crv, [0.3,0.7])
+        elif (inter.layer == "06-IR" or inter.layer == "IR-06") and box_number == 00:
+            pts = divide_curve_manually(crv, [0.3,0.6,0.85])
+        elif (inter.layer == "09-05" or inter.layer == "05-09") and box_number == 00:
+            pts = divide_curve_manually(crv, [0.2,0.45, 0.7])
+        elif (inter.layer == "09-06" or inter.layer == "06-09") and box_number == 01 and crv == inter.crvs[0]:
+            pts = divide_curve_manually(crv, [0.3,0.575, 0.85])
+        elif (inter.layer == "09-06" or inter.layer == "06-09") and box_number == 01 and crv == inter.crvs[1]:
+            pts = divide_curve_manually(crv, [0.38])
+        elif (inter.layer == "00-02" or inter.layer == "02-00") and box_number == 01:
+            pts = divide_curve_manually(crv, [0.2,0.5, 0.7,0.85])
+        elif (inter.layer == "11-IB" or inter.layer == "IB-11") and box_number == 01:
+            pts = divide_curve_manually(crv, [0.3,0.7])
+        elif (inter.layer == "11-IL" or inter.layer == "IL-11") and box_number == 01:
+            pts = divide_curve_manually(crv, [0.25,0.5,0.75])
+        elif (inter.layer == "07-IB" or inter.layer == "IB-07") and box_number == 07:
+            pts = divide_curve_manually(crv, [0.20,0.5,0.85])
+        elif (inter.layer == "06-03" or inter.layer == "03-06") and box_number == 07:
+            pts = divide_curve_manually(crv, [0.65])
+        elif (inter.layer == "07-IT" or inter.layer == "IT-07") and box_number == 07:
+            pts = divide_curve_manually(crv, [0.25,0.85])
+        
+        elif (inter.layer == "04-05" or inter.layer == "05-04") and box_number == 11 and crv == inter.crvs[0]:  # BOX 11: 3 AND 00 ADD MORE BRACKETS # , 4 AND 5 REMOVE 1 BRACKET,#11 AND 9 ADJUST THE BRACKET# 7 AND 8 ADD 2 OR 3 MORE # 8 AND it ADD 2 MORE
+            pts = divide_curve_manually(crv, [])
+        elif (inter.layer == "04-05" or inter.layer == "05-04") and box_number == 11 and crv == inter.crvs[1]:
+            pts = divide_curve_manually(crv, [0.5])
+        elif (inter.layer == "11-09" or inter.layer == "09-11") and box_number == 11:
+            pts = divide_curve_manually(crv, [0.7])
+        elif (inter.layer == "07-08" or inter.layer == "08-07") and box_number == 11:
+            pts = divide_curve_manually(crv, [0.25,0.55, 0.85])
+        elif (inter.layer == "08-IT" or inter.layer == "IT-08") and box_number == 11:
+            pts = divide_curve_manually(crv, [0.13,0.30, 0.67,0.85])
+        elif (inter.layer == "00-IL" or inter.layer == "IL-00") and box_number == 11:
+            pts = divide_curve_manually(crv, [])
+       
+        elif (inter.layer == "11-06" or inter.layer == "06-11") and box_number == 10:
+            pts = divide_curve_manually(crv, [0.5])
+        elif (inter.layer == "07-01" or inter.layer == "01-07") and box_number == 10:
+            pts = divide_curve_manually(crv, [0.5])
+        elif (inter.layer == "09-01" or inter.layer == "01-09") and box_number == 10 and crv == inter.crvs[0]:
+            pts = divide_curve_manually(crv, [0.2,0.45,0.7])
+        elif (inter.layer == "09-01" or inter.layer == "01-09") and box_number == 10 and crv == inter.crvs[1]:
+            pts = divide_curve_manually(crv, [0.58])
+
+        elif (inter.layer == "BO-07" or inter.layer == "07-BO") and box_number == 18 and crv == inter.crvs[1]:
+            pts = divide_curve_manually(crv, [])
+        elif (inter.layer == "BO-07" or inter.layer == "07-BO") and box_number == 18 and crv == inter.crvs[0]:
+            pts = divide_curve_manually(crv, [0.1,0.3,0.5,0.7,0.9])
+        
+        elif (inter.layer == "09-04" or inter.layer == "04-09") and box_number == 18:
+            pts = divide_curve_manually(crv, [0.25, 0.65])
+        elif (inter.layer == "10-04" or inter.layer == "04-10") and box_number == 18:
+            pts = divide_curve_manually(crv, [0.25, 0.65])
+        elif (inter.layer == "11-IT" or inter.layer == "IT-11") and box_number == 18:
+            pts = divide_curve_manually(crv, [0.2, 0.4,0.6, 0.8])
+
+        #BOX 10: 11 AND 6, 07 AND 1 ADD 1 OR 2 BRACKETS, 09 AND 01 ADD 2 OR 3 
+        # if list_is_provided:
+        #     p_xs = [dx/crv.GetLength() for dx in distance]
+        #     params, pts = [crv.DivideByLength(px) for px in p_xs]
+        elif crv.GetLength() > distance*3:
             d_count = crv.GetLength()//distance
             params = crv.DivideByCount(d_count,True)
             pts = [crv.PointAt(t) for t in params[1:len(params)-1]]
@@ -630,6 +805,7 @@ for inter in intersections:
                 #iterate over each surface cut
                 i = 0
                 for cut in cuts:
+                    print("cut is : {0}".format(cut) )
                     circles.append(cut)
                     print(inter.layer)
                     count = 0
@@ -649,25 +825,23 @@ for inter in intersections:
                         max_area_threshold_applied = 240
                         p_count_max_applied = 10
                         min_area_threshold_applied = 70
-                    elif((inter.layer == "07-IB" or inter.layer == "IB-07") and box_number == 3):                         
+                    elif((inter.layer == "07-IB" or inter.layer == "IB-07") and box_number == 3 and pt != pts[2]):  
+                        print("this should appear only twice")                       
                         max_area_threshold_applied = 240
                         p_count_max_applied = 13
                         min_area_threshold_applied = 110
                     
-                    elif((inter.layer == "BO-07" or inter.layer == "07-BO") and box_number == 18): 
-                        print("kharaaaaaaaaaaaaaaaaaa")                        
+                    elif((inter.layer == "BO-07" or inter.layer == "07-BO") and box_number == 18):                       
                         max_area_threshold_applied = 240
                         p_count_max_applied = 13
-                        min_area_threshold_applied = 120
+                        min_area_threshold_applied = 112 #NEW!!
 
-                    elif((inter.layer == "IB-11" or inter.layer == "11-IB") and box_number == 0): 
-                        #print("kharaaaaaaaaaaaaaaaaaa")                        
+                    elif((inter.layer == "IB-11" or inter.layer == "11-IB") and box_number == 0):                       
                         max_area_threshold_applied = 240
                         p_count_max_applied = 13
                         min_area_threshold_applied = 209
 
-                    elif((inter.layer == "IB-07" or inter.layer == "07-IB") and box_number == 18): 
-                        print("kharaaaaaaaaaaaaaaaaaa")                        
+                    elif((inter.layer == "IB-07" or inter.layer == "07-IB") and box_number == 18):                        
                         max_area_threshold_applied = 1
                         p_count_max_applied = 1
                         min_area_threshold_applied = 0.5
@@ -677,7 +851,32 @@ for inter in intersections:
                         max_area_threshold_applied = 220
                         p_count_max_applied = 13
                         min_area_threshold_applied = 218
+
                     
+                    elif((inter.layer == "06-11" or inter.layer == "11-06") and box_number == 10): 
+                        #print("kharaaaaaaaaaaaaaaaaaa")                        
+                        max_area_threshold_applied = 150
+                        p_count_max_applied = 13
+                        min_area_threshold_applied = 140
+                    
+                    elif (inter.layer == "03-08" or inter.layer == "03-08") and box_number == 26:
+                        print("shittt")
+                        max_area_threshold_applied = 250
+                        min_area_threshold_applied = 150
+                        p_count_max_applied = 20
+
+                    elif (inter.layer == "09-11" or inter.layer == "11-09") and box_number == 5:
+                        print("shittt")
+                        max_area_threshold_applied = 250
+                        min_area_threshold_applied = 120
+                        p_count_max_applied = 20
+
+                    elif (inter.layer == "IR-05" or inter.layer == "05-IR") and box_number == 17:
+                        print("shittt")
+                        max_area_threshold_applied = 250
+                        min_area_threshold_applied = 140
+                        p_count_max_applied = 20
+
 
                     else:
                         max_area_threshold_applied = max_area_threshold
@@ -686,10 +885,11 @@ for inter in intersections:
 
                     #print("count is {0}, cut area is {1} and pcount is {2} and max threshold is {3}".format(count, cut.GetArea(), pcount,max_area_threshold_applied ))
                     if (count > 4 and cut.GetArea() > min_area_threshold_applied and cut.GetArea() < max_area_threshold_applied and pcount > 4 and pcount < p_count_max_applied) : #pcount < 7 was added to account for any irregularites 
+                        print("kharaaaaa22")
                         #of brackets that may cause problems!!                        
                         edge_curves = [edge.EdgeCurve for edge in cut.Edges if edge.Degree == 1]
                         edge_curves.sort(key = lambda e :e.GetLength())
-                        circles.append(edge_curves)
+                        #circles.append(edge_curves)
                         edge_count = 0
                         big_edge = edge_curves[-1]
                         for e in edge_curves:
@@ -713,7 +913,7 @@ for inter in intersections:
                                     edge_curves = [curve]
                             small_edge, big_edge, p0, p1, pp0, pp1 = select_small_edge_and_adjust_both_edges_exceptions(edge_curves[0], big_edge, 100)
                         
-                        elif((inter.layer == "IB-07" or inter.layer == "07-IB") and box_number == 3):
+                        elif((inter.layer == "IB-07" or inter.layer == "07-IB") and box_number == 3 and pt != pts[2]):
                             if cut.GetArea() < 190:
                                 continue
                             small_edge = edge_curves[3]
@@ -747,12 +947,17 @@ for inter in intersections:
                         
                         elif((inter.layer == "BO-07" or inter.layer == "07-BO") and box_number == 18):
                             print("we are kharuyanaaa")
-                            curve = rg.Curve.JoinCurves([edge_curves[3],edge_curves[4]])[0]
-                            small_edge = curve
-                            big_edge = edge_curves[7]
+                            #curve = rg.Curve.JoinCurves([edge_curves[3],edge_curves[4]])[0]
+                            small_edge = edge_curves[2]
+                            print(len(edge_curves))
+                            big_edge = edge_curves[5]
                             #big_edge = edge_curves[7]
                             small_edge, big_edge, p0, p1, pp0, pp1 = select_small_edge_and_adjust_both_edges_exceptions(small_edge, big_edge, 100)
-                        
+                            big_edge = rg.Line(pp1, pp0)
+                            big_edge = big_edge.ToNurbsCurve()
+                            pp0 = big_edge.PointAtStart
+                            pp1 = big_edge.PointAtEnd
+
                         elif((inter.layer == "IB-11" or inter.layer == "11-IB") and box_number == 0): 
                             small_edge = edge_curves[3]
                             big_edge = edge_curves[7]
@@ -764,21 +969,37 @@ for inter in intersections:
                             big_edge = edge_curves[7]
                             small_edge, big_edge, p0, p1, pp0, pp1 = select_small_edge_and_adjust_both_edges_exceptions(small_edge, big_edge, 100)
                         
+
+                        elif((inter.layer == "06-11" or inter.layer == "11-06") and box_number == 10): 
+                            print("kharaaaaaaa")
+                            small_edge = edge_curves[5]
+                            big_edge = edge_curves[7]
+                            small_edge, big_edge, p0, p1, pp0, pp1 = select_small_edge_and_adjust_both_edges_exceptions(small_edge, big_edge, 100)
+                        
+                        elif((inter.layer == "09-11" or inter.layer == "11-09") and box_number == 5): 
+                            print("kharaaaaaaa")
+                            small_edge = edge_curves[3]
+                            big_edge = edge_curves[5]
+                            small_edge, big_edge, p0, p1, pp0, pp1 = select_small_edge_and_adjust_both_edges_exceptions(small_edge, big_edge, 100)
+                        
+
+
                         else:
                             #big_edges.append(big_edge)
                             print(inter.layer)
                             small_edge, big_edge, p0, p1, pp0, pp1, edge3 = select_small_edge_and_adjust_both_edges(edge_curves, big_edge)
                         
                         
+                        
                         #add a plane for adding later on the appropriate tags
-                        planes_pair, px, py = add_planes_for_text(p0, p1, pp0, pp1, move_text_distance1, move_text_distance2) #both planes are appended
-
+                        planes_pair, px, py = add_planes_for_textv2(p0, p1, pp0, pp1, 3, move_text_distance1, move_text_distance2) #both planes are appended
+                        planes_pair_brkts, _, _ = add_planes_for_text(p0, p1, pp0, pp1, move_text_4_brkt_1, move_text_4_brkt_2)
                         #Kept part of Ananyas code
                         vec = rg.Vector3d(p1 - p0)
-                        line = rg.Line(p0,vec,25.0 + FAB_TOL).ToNurbsCurve()
+                        line = rg.Line(p0,vec,25.15).ToNurbsCurve() #0.15 Fab_tol
                         small_edge = line
                         vec1 = rg.Vector3d(pp1 - pp0)
-                        line1 = rg.Line(pp0,vec1,25.0 + FAB_TOL).ToNurbsCurve()
+                        line1 = rg.Line(pp0,vec1,25.15).ToNurbsCurve() #0.15 used to be Fab_tol
                         big_edge = line1
                         #GET THE MIDPOINT OF THE BIGEDGE?
                         big_edge.Domain = rg.Interval(0,1)
@@ -789,7 +1010,8 @@ for inter in intersections:
                         p1s.append(closest_pt0[5])
                         guide_vec = (closest_pt0[5]) if (closest_pt0[0]) else None
                         
-                        
+                        sm_edges.append(small_edge)
+                        big_edges.append(pp0)
                         #push back big_edge
                         box_type = 0
                         #check if the connection is between a box and a panel
@@ -810,10 +1032,12 @@ for inter in intersections:
                         if box_type == 1: #meaning one of the breps is wooden box side
                             small_edge, big_edge, p0, p1, pp0, pp1, depth_vector =  inter.adjustment_box_bracket(small_edge, big_edge, p0, p1, pp0, pp1)
                         print("sm edge typeis {0}".format(type(small_edge)))
-                        small_edge_tol, big_edge_tol, p0, p1_t, pp0, pp1_t = inter.adjust_small_big_edge_for_fab_tolerance(p0, p1, pp0, pp1, FAB_TOL)
+                        small_edge_tol, big_edge_tol, p0, p1_t, pp0, pp1_t = inter.adjust_small_big_edge_for_fab_tolerance(small_edge, big_edge, p0, p1, pp0, pp1, FAB_TOL)
                         
-                        p0s.append(pp0)
-                        p1s.append(pp1)
+                        p0s.append(small_edge_tol)
+                        p1s.append(p1)
+                        pp0s.append(big_edge_tol)
+                        pp1s.append(p1_t)
                         if small_edge and big_edge is not None:
                             fil = rg.Curve.CreateFilletCurves(small_edge,p0,big_edge,pp0,0,True,True,True,True,0.01)
                             fil_tol = rg.Curve.CreateFilletCurves(small_edge_tol,p0,big_edge_tol,pp0,0,True,True,True,True,0.01)
@@ -831,14 +1055,16 @@ for inter in intersections:
                             off_tol = fil_tol.Offset(rg.Point3d((fil_tol.PointAtEnd+fil_tol.PointAtStart)/2),rg.Plane(fil_tol.PointAtEnd,fil_tol.PointAtStart,fil_tol.PointAt(0.5)).ZAxis,3.2,0.01,0.01,False,rg.CurveOffsetCornerStyle.Sharp,rg.CurveOffsetEndStyle.Flat)
                             #sm_edges.append(off[0])
                             
-                            if not box_type: 
-                                b1,b2 = rg.Extrusion.Create(off[0].ToNurbsCurve(),9.0 + FAB_TOL, True),rg.Extrusion.Create(off[0].ToNurbsCurve(),-9.0 - FAB_TOL,True)
-                                b1_t,b2_t = rg.Extrusion.Create(off_tol[0].ToNurbsCurve(),9.0, True),rg.Extrusion.Create(off_tol[0].ToNurbsCurve(),-9.0,True)
-                            else: 
-                                b1,b2 = rg.Extrusion.Create(off[0].ToNurbsCurve(),15.0 + FAB_TOL, True),rg.Extrusion.Create(off[0].ToNurbsCurve(),-15.0 - FAB_TOL,True)
-                                b1_t,b2_t = rg.Extrusion.Create(off_tol[0].ToNurbsCurve(),15.0, True),rg.Extrusion.Create(off_tol[0].ToNurbsCurve(),-15.0,True)
-                            sm_edges.append(b1_t)
-                            big_edges.append(b1)
+                            # if not box_type: 
+                            #     b1,b2 = rg.Extrusion.Create(off[0].ToNurbsCurve(),9.15, True),rg.Extrusion.Create(off[0].ToNurbsCurve(),-9.15,True) #X_FAB TOL 
+                            #     b1_t,b2_t = rg.Extrusion.Create(off_tol[0].ToNurbsCurve(),9.15 - FAB_TOL, True),rg.Extrusion.Create(off_tol[0].ToNurbsCurve(),-9.15 + FAB_TOL,True)
+                            #     inter.br_type.append(1)
+                            #else: 
+                            b1,b2 = rg.Extrusion.Create(off[0].ToNurbsCurve(),15.15, True),rg.Extrusion.Create(off[0].ToNurbsCurve(),-15.15,True) #X_FAB_TOL
+                            b1_t,b2_t = rg.Extrusion.Create(off_tol[0].ToNurbsCurve(),15.15 - FAB_TOL, True),rg.Extrusion.Create(off_tol[0].ToNurbsCurve(),-15.15 + FAB_TOL,True)
+                            inter.br_type.append(0)
+                            #sm_edges.append(b1_t)
+                            #big_edges.append(b1)
                             if b1 and b2 is not None:
                                 x1 = b1.ToBrep()
                                 x2 = b2.ToBrep()
@@ -869,16 +1095,27 @@ for inter in intersections:
                             indices = fillet_indices
                             indices_tol = fillet_indices_tol
                             bbe = rg.Brep.CreateFilletEdges(bool,indices,[2.0 for _ in range(len(indices))],[2.0 for _ in range(len(indices))],rg.BlendType.Fillet,rg.RailType.RollingBall,0.0001)
-                            bbe_tol = rg.Brep.CreateFilletEdges(bool_t,indices_tol,[2.0 for _ in range(len(indices_tol))],[2.0 for _ in range(len(indices_tol))],rg.BlendType.Fillet,rg.RailType.RollingBall,0.0001)
+                            bbe_tol = rg.Brep.CreateFilletEdges(bool_t,indices_tol,[4.0 for _ in range(len(indices_tol))],[4.0 for _ in range(len(indices_tol))],rg.BlendType.Fillet,rg.RailType.RollingBall,0.0001)
                            
 
                             #new part to accomodate the screws in the top box panels 
                             if box_type == 1 and ("TO" in inter.layer or "IT" in inter.layer):
-                                screw, face = inter.create_screws_holes(bbe[0], depth_vector)
-                                hexholder, face = inter.create_hexholder(bbe[0], depth_vector)
+                                screw, face, cntr_pt = inter.create_screws_holes(bbe_tol[0], depth_vector)
+                                screw_cntr_pts.append(cntr_pt)
+                                #bracket_lines_tol.append(fil_tol) 
+                                top_box_brackets.append(bbe_tol[0])
+                                hexholder, face = inter.create_hexholder(bbe_tol[0], depth_vector)
+                                print(hexholder)
+                                temp = rg.Brep.CreateBooleanUnion([bbe_tol[0], hexholder], 0.001)
+                                temp2 = rg.Brep.CreateBooleanDifference(temp[0], screw, 0.001)
+                                bbe_tol[0] = temp2[0]
                                 inter.hexholders.append(hexholder)
                                 #sm_edges.append(face)
                                 inter.screws.append(screw)
+
+                            if box_type == 1 and ("RI" in inter.layer):
+                                debug_panels.append(bbe_tol[0])
+                                bracket_lines_tol.append(fil_tol) 
                                 
 
                         #add the real bracket to the intersection variable brackets
@@ -893,6 +1130,7 @@ for inter in intersections:
                             circs.append(bbe)
                             circs_tol.append(bbe_tol)
                             inter.text_planes.append(planes_pair)
+                            inter.text_planes_brkts.append(planes_pair_brkts)
                             inter.brackets.append(bbe)
                             
                             inter.fab_brackets.append(bbe_tol)
@@ -926,12 +1164,15 @@ for tag in tags:
         pass
 
 planes_txt = []
+planes_txt_for_brkt = []
+tag_txt_for_brkt = []
 tag_txt_by_layer = []
 tag_txt_layers = []
 tag_txt = []
 all_brackets = []
 all_fab_brackets = []
 all_screws = []
+all_br_types = []
 
 all_hexholders = []
 
@@ -940,27 +1181,40 @@ for inter in intersections:
     all_fab_brackets.append(inter.fab_brackets)
     all_screws.append(inter.screws)
     all_hexholders.append(inter.hexholders)
-
+    all_br_types.append(inter.br_type)
     for index, planes_pair in enumerate(inter.text_planes): 
-
+        j = 0
         pt0 =inter.breps[0].ClosestPoint(planes_pair[0].Origin)
         pt1 =inter.breps[0].ClosestPoint(planes_pair[1].Origin)
         dist0 = planes_pair[0].Origin.DistanceTo(pt0)
-        dist1 = planes_pair[1].Origin.DistanceTo(pt1)
+        dist1 = planes_pair[1].Origin.DistanceTo(pt1) 
+        tag_txt_for_brkt.append(inter.tags[index])      
         if dist1 < dist0:
-            planes_pair.reverse()
+            planes_pair.reverse()  
+            inter.text_planes_brkts[index].reverse()  
         for i, plane in enumerate(planes_pair):
-             if not inter.layer.Split('-')[i] in B_TAGS:
+            if not inter.layer.Split('-')[i] in B_TAGS:
                 tag_txt_layers.append(inter.layer.Split('-')[i])
                 planes_txt.append(plane)
                 tag_txt.append(inter.tags[index]) 
+                # if j == 0 and dist1> dist0:
+                #     planes_txt_for_brkt.append(inter.text_planes_brkts[index][i])                   
+                #     j += 1
+                if (j== 0 and dist1 > dist0):
+                    planes_txt_for_brkt.append(inter.text_planes_brkts[index][0])                   
+                    j += 1
+                elif (j==0 and dist1 < dist0):
+                    planes_txt_for_brkt.append(inter.text_planes_brkts[index][1])
+                    j += 1
+
+                
 
         
        
             
 
 panel_extrusion = Panel_Extrusions(intersections)
-panel_extrusion.populate_brackets_extrusion()
+dibond_panels =  panel_extrusion.populate_brackets_extrusion()
 all_panels = panel_extrusion.panels
 
 
